@@ -1,0 +1,81 @@
+# Live (Dokploy on Hetzner): Odoo + Postgres + app.
+# No ports are published: Dokploy's proxy routes the app's domain to app:8000.
+# Odoo and Postgres stay on the internal network unless you add a domain for Odoo.
+# Every secret is required; a missing one stops the deploy instead of falling back.
+name: writers-ledger
+
+x-postgres-client: &postgres-client
+  PGHOST: db
+  PGUSER: odoo
+  PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+  ODOO_DB: ${ODOO_DB:-writers}
+
+services:
+  db:
+    image: postgres:17.11
+    environment:
+      POSTGRES_USER: odoo
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: postgres
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U odoo -d postgres"]
+      interval: 5s
+      retries: 30
+    restart: unless-stopped
+
+  odoo-init:
+    image: odoo:19.0-20261015
+    entrypoint: ["bash", "/init.sh"]
+    environment:
+      <<: *postgres-client
+      ODOO_ADMIN_PASSWORD: ${ODOO_ADMIN_PASSWORD:?set ODOO_ADMIN_PASSWORD}
+    volumes:
+      - ./odoo/init.sh:/init.sh:ro
+      - odoo-data:/var/lib/odoo
+    depends_on:
+      db:
+        condition: service_healthy
+
+  odoo:
+    image: odoo:19.0-20261015
+    command: ["--database=${ODOO_DB:-writers}", "--db-filter=^${ODOO_DB:-writers}$$", "--no-database-list", "--proxy-mode"]
+    environment: *postgres-client
+    volumes:
+      - odoo-data:/var/lib/odoo
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8069/web/health"]
+      interval: 10s
+      retries: 30
+    depends_on:
+      odoo-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  app:
+    build: .
+    environment:
+      APP_USER: ${APP_USER:?set APP_USER}
+      APP_PASSWORD: ${APP_PASSWORD:?set APP_PASSWORD}
+    volumes:
+      - ./writers.yaml:/srv/writers.yaml:ro
+      - app-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz')"]
+      interval: 10s
+      retries: 10
+    depends_on:
+      odoo:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  db-data:
+  odoo-data:
+  app-data:

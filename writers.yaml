@@ -1,0 +1,17 @@
+- id: shopify-odoo-sync
+  owner: backend
+  purpose: Creates sale orders in Odoo from Shopify orders
+  identity: { odoo_user: sync@alohas.test, shopify_app: order-sync }
+  may_write: [odoo:sale.order, odoo:res.partner]
+
+- id: stock-cron
+  owner: sysadmin
+  purpose: Pushes Odoo stock levels to Shopify locations
+  identity: { odoo_user: stock@alohas.test, shopify_app: stock-sync }
+  may_write: [odoo:stock.quant, shopify:inventory_level]
+
+- id: pmo-pricing-script
+  owner: ""            # deliberately ownerless for the demo
+  purpose: Bulk-updates product metafields for drops
+  identity: { shopify_app: pricing-tool }
+  may_write: [shopify:product]

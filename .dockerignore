@@ -1,0 +1,6 @@
+# Allowlist: only what the app image needs. Keeps .env and the venv out of the image.
+*
+!app/
+!writers.yaml
+!requirements.txt
+**/__pycache__

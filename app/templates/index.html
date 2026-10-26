@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Writers Ledger</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+  <h1>Writers Ledger</h1>
+  <p class="lede">Every change made to Odoo and Shopify, who made it, and whether they were allowed to.</p>
+</header>
+<main>
+  <section id="findings">
+    <h2>Findings</h2>
+    <p class="hint">Things that need a person's attention, most urgent first.</p>
+    <p class="empty">No findings yet. The first check runs once the ledger has writes.</p>
+  </section>
+
+  <section id="writers">
+    <h2>Writers</h2>
+    <p class="hint">Everything that is allowed to change Odoo or Shopify, as listed in <code>writers.yaml</code>.</p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Writer</th><th>Owner</th><th>What it does</th><th>Signs in as</th>
+            <th>Allowed to change</th><th>Last activity</th><th class="num">Writes</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for w in writers %}
+          <tr>
+            <td><strong>{{ w.id }}</strong></td>
+            <td>{% if w.owner %}{{ w.owner }}{% else %}<span class="badge amber">No owner</span>{% endif %}</td>
+            <td>{{ w.purpose }}</td>
+            <td>{% for kind, value in w.identity.items() %}<div>{{ kind | replace("_", " ") }}: <code>{{ value }}</code></div>{% endfor %}</td>
+            <td>{% for scope in w.may_write %}<div><code>{{ scope }}</code></div>{% endfor %}</td>
+            <td class="muted">never</td>
+            <td class="num">0</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="ledger">
+    <h2>Ledger</h2>
+    <p class="hint">The latest 200 writes seen in Odoo and Shopify.</p>
+    <p class="empty">No writes recorded yet.</p>
+  </section>
+</main>
+<footer>
+  Last check: never · Cost of last check: — · {{ loc }} lines of app code
+</footer>
+</body>
+</html>

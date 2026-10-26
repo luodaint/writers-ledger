@@ -1,0 +1,85 @@
+# Offline: Odoo + Postgres + app (+ fake Shopify from Phase 1). No accounts needed.
+#   docker compose -f docker-compose.fake.yml up
+# Every port is bound to 127.0.0.1, so the local-only default passwords below are
+# never reachable from another machine. Override any of them in .env.
+name: writers-ledger
+
+x-postgres-client: &postgres-client
+  PGHOST: db
+  PGUSER: odoo
+  PGPASSWORD: ${POSTGRES_PASSWORD:-local-only-postgres}
+  ODOO_DB: ${ODOO_DB:-writers}
+
+services:
+  db:
+    image: postgres:17.11
+    environment:
+      POSTGRES_USER: odoo
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local-only-postgres}
+      POSTGRES_DB: postgres
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U odoo -d postgres"]
+      interval: 5s
+      retries: 30
+    restart: unless-stopped
+
+  odoo-init:
+    image: odoo:19.0-20261015
+    entrypoint: ["bash", "/init.sh"]
+    environment:
+      <<: *postgres-client
+      ODOO_ADMIN_PASSWORD: ${ODOO_ADMIN_PASSWORD:-local-only-admin}
+    volumes:
+      - ./odoo/init.sh:/init.sh:ro
+      - odoo-data:/var/lib/odoo
+    depends_on:
+      db:
+        condition: service_healthy
+
+  odoo:
+    image: odoo:19.0-20261015
+    command: ["--database=${ODOO_DB:-writers}", "--db-filter=^${ODOO_DB:-writers}$$", "--no-database-list"]
+    environment: *postgres-client
+    volumes:
+      - odoo-data:/var/lib/odoo
+    ports:
+      - "127.0.0.1:8069:8069"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8069/web/health"]
+      interval: 10s
+      retries: 30
+    depends_on:
+      odoo-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  app:
+    build: .
+    environment:
+      APP_USER: ${APP_USER:-reviewer}
+      APP_PASSWORD: ${APP_PASSWORD:-local-only-demo}
+    volumes:
+      - ./writers.yaml:/srv/writers.yaml:ro
+      - app-data:/data
+    ports:
+      - "127.0.0.1:8000:8000"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz')"]
+      interval: 10s
+      retries: 10
+    depends_on:
+      odoo:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  db-data:
+  odoo-data:
+  app-data:
