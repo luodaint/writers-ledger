@@ -12,6 +12,7 @@ RUN pip install --require-hashes -r requirements.txt \
  && mkdir /data && chown app /data
 
 COPY app ./app
+COPY sim ./sim
 COPY writers.yaml .
 
 USER app

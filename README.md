@@ -4,25 +4,103 @@ Every write into Odoo and Shopify lands in a ledger, gets matched against
 `writers.yaml`, and anything unknown, out of scope or ownerless becomes a finding,
 explained in plain words.
 
-> Work in progress (Phase 0 of 4: skeleton). The full README, with the cost per
+> Work in progress (Phase 1 of 4: the ledger). The full README, with the cost per
 > check run and the case questions answered, comes in Phase 4.
 
 ## Run it offline
 
 ```sh
-docker compose -f docker-compose.fake.yml up    # or: make up
+make up        # Postgres, Odoo 19, a fake Shopify and the app (first boot ~2 min)
+make seed      # Odoo bot users with their own API keys, 15 shoes x 6 sizes, 3 shops, stock
+make traffic   # three simulated days of normal writes from every writer
 ```
 
-Open <http://127.0.0.1:8000> and log in as `reviewer` / `local-only-demo`.
-Odoo is at <http://127.0.0.1:8069> (`admin` / `local-only-admin`). These defaults
-only work offline: every port is bound to `127.0.0.1`. Change them in `.env`
-(see `.env.example`).
+Open <http://127.0.0.1:8000> and log in as `reviewer` / `local-only-demo`. The
+ledger fills within 10 seconds of the traffic. Odoo is at <http://127.0.0.1:8069>
+(`admin` / `local-only-admin`). These defaults only work offline: every port is
+bound to `127.0.0.1`. Change them in `.env` (see `.env.example`).
+
+## How the Odoo API keys are handled
+
+Each writer signs in to Odoo with its own API key, which is what lets the ledger
+say *who* made a change.
+
+**Who gets a key.** `make seed` creates one per bot user:
+
+| Odoo login | Used by | Allowed by Odoo to |
+|---|---|---|
+| `ledger@alohas.test` | the app's collector | **read only**: a custom group, "Writers Ledger: read-only" |
+| `sync@alohas.test` | the simulated `shopify-odoo-sync` | create customers and sale orders |
+| `stock@alohas.test` | the simulated `stock-cron` | count and adjust stock |
+| `pmo@alohas.test` | not used yet | read |
+| `admin` | the "forgotten cron" incident (Phase 2); this key lasts 7 days | everything |
+
+The collector checks its own key on every poll and **refuses to poll if the key
+can write** to any watched model.
+
+**How they are made.** Odoo 19 only lets an existing key create a new key, and only
+for its own user. So the seed runs inside `odoo shell`, Odoo's admin console, which
+can issue a key for each bot. The bots have no password: the key is the only way in.
+
+**Where they live.** Two files on two Docker volumes, so each container holds only
+the keys it needs:
+
+| Volume | File | Holds | Mounted by |
+|---|---|---|---|
+| `odoo-collector-key` | `odoo-key.json` | the read-only collector key | `seed` (writes), `app` (read-only) |
+| `odoo-writer-keys` | `odoo-keys.json` | the writers' keys and the admin key | `seed` (writes), `traffic` (read-only) |
+
+The app is the only container exposed to the internet, and it never sees a key
+that can write. Both files are mode `0640`, owned by the `odoo` user and group
+(gid 101); the reading containers join that group with `group_add: ["101"]`. The
+keys are never printed, logged, put in environment variables or committed to git.
+
+**Expiry and rotation.** Odoo caps keys for internal users at 90 days; the seed
+sets 89, and 7 for the admin key. Run `make seed` again to rotate: it revokes the old keys, issues new
+ones and rewrites the file. The app re-reads the file on every poll, so no restart
+is needed, and an old key is refused (HTTP 401) right away. Set a reminder at about
+80 days, or run `make seed` from a monthly cron. To cut a bot off immediately,
+delete its key in Odoo (Settings, Users, the bot, API Keys) or re-run `make seed`.
+
+**Live (Dokploy).** The same mechanism, run once from a shell on the server, in the
+folder where Dokploy checked out the repo:
+`docker compose -p <dokploy-app-name> run --rm -T seed < sim/seed_odoo.py`.
+
+## What the ledger can and can't see
+
+- **Odoo is polled** every `POLL_SECONDS` (30 live, 10 offline), so it sees only
+  the last writer of each record between two polls. The production answer is an
+  audit trail: OCA `auditlog` or a database trigger. On first start the collector
+  observes from that moment on and ignores existing data.
+- **Shopify can't say who changed inventory.** A new order is attributed to the app
+  that created it. Order and product updates are attributed through the record's
+  event log: only an event from 30 seconds before to 5 seconds after the change
+  counts, and if two different authors fit, the write is `unattributed` rather than
+  a guess. Inventory level changes are stored as `unattributed`. The fake Shopify behaves the same way, so the
+  offline demo is no more generous than the real thing.
+- **Shopify identities are app names**, because product events expose an app's
+  name but not its id. Installing an app is limited to store staff, but a staff
+  member could install one named like a registered writer.
+- **The collector is hard to blind.** Each poll reads every page since the cursor,
+  so a bulk write that stamps thousands of records with the same second can't stall
+  it. It re-reads a 5-minute overlap, because Odoo stamps `write_date` when a
+  transaction starts and a long one (a scheduled job, say) commits later; the
+  ledger drops what it already has. A writer or product it isn't allowed to read is
+  recorded by id (`res.users#13`, so an unknown writer) instead of stopping the poll,
+  and one model failing doesn't stop the others.
+- **`unattributed` is reserved.** A writer actually named that is stored in quotes
+  (`"unattributed"`), so it shows in red with the unknown writers.
+- **No customer data is stored.** Each collector keeps an allowlist of fields per
+  model: order numbers, totals, SKUs, stock quantities. Names, emails, addresses
+  and phone numbers are dropped on arrival.
+- The fake Shopify keeps its stock, orders and events on a volume, so rebuilding
+  doesn't reset Shopify while Odoo keeps its stock.
 
 ## Develop
 
 ```sh
 make test    # Python 3.12 venv via uv, then pytest
-make loc     # app code line count (budget: 500)
+make loc     # app code line count
 make help    # all targets
 ```
 

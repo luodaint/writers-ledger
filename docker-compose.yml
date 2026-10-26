@@ -53,14 +53,42 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
 
+  # One-shot, run by `make seed COMPOSE="docker compose"` (script on stdin). Starts as
+  # root only to give the key volumes to the odoo user, then runs Odoo's shell as it.
+  seed:
+    image: odoo:19.0-20261015
+    profiles: ["tools"]
+    user: root
+    entrypoint: ["bash", "-c", "install -d -o odoo -g odoo -m 0750 /secrets/collector /secrets/writers && exec runuser -u odoo -- odoo shell -d \"$$ODOO_DB\" --no-http --log-level=warn"]
+    environment: *postgres-client
+    volumes:
+      - ./sim:/opt/writers-ledger/sim:ro
+      - odoo-data:/var/lib/odoo
+      - odoo-collector-key:/secrets/collector
+      - odoo-writer-keys:/secrets/writers
+    depends_on:
+      odoo:
+        condition: service_healthy
+
   app:
     build: .
     environment:
       APP_USER: ${APP_USER:?set APP_USER}
       APP_PASSWORD: ${APP_PASSWORD:?set APP_PASSWORD}
+      ODOO_URL: http://odoo:8069
+      ODOO_DB: ${ODOO_DB:-writers}
+      POLL_SECONDS: ${POLL_SECONDS:-30}
+      LEDGER_DB: /data/ledger.db
+      # The observer app in your dev store. Without them, webhooks are refused (401).
+      SHOPIFY_STORE: ${SHOPIFY_STORE:-}
+      SHOPIFY_CLIENT_ID: ${SHOPIFY_CLIENT_ID:-}
+      SHOPIFY_CLIENT_SECRET: ${SHOPIFY_CLIENT_SECRET:-}
+      SHOPIFY_WEBHOOK_SECRET: ${SHOPIFY_WEBHOOK_SECRET:-}
     volumes:
       - ./writers.yaml:/srv/writers.yaml:ro
       - app-data:/data
+      - odoo-collector-key:/secrets:ro  # the read-only collector key, nothing else
+    group_add: ["101"]  # the odoo group, which may read the key file
     read_only: true
     tmpfs:
       - /tmp
@@ -79,3 +107,5 @@ volumes:
   db-data:
   odoo-data:
   app-data:
+  odoo-collector-key:
+  odoo-writer-keys:

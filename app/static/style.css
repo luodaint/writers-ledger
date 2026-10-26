@@ -100,3 +100,32 @@ footer {
   color: var(--muted);
   font-size: 14px;
 }
+
+tr.unattributed td { background: var(--amber-soft); }
+.nowrap { white-space: nowrap; }
+.ref { margin-top: 2px; font-size: 13px; color: var(--muted); word-break: break-all; }
+.details span { display: inline-block; margin-right: 12px; color: var(--muted); }
+.details strong { color: var(--text); font-weight: 600; }
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: end;
+  margin-bottom: 16px;
+}
+
+.filters label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+
+.filters select, .filters button {
+  min-width: 140px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 15px;
+}
+
+.filters button { min-width: 0; cursor: pointer; font-weight: 600; }

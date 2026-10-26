@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 import yaml
 
-IDENTITY_KINDS = ("odoo_user", "shopify_app")
+IDENTITY_KINDS = {"odoo": "odoo_user", "shopify": "shopify_app"}
 KEYS = {"id", "owner", "purpose", "identity", "may_write"}
 SCOPE = re.compile(r"(odoo|shopify):[a-z][a-z0-9_]*(\.[a-z0-9_]+)*")
 
@@ -56,7 +56,7 @@ def parse_register(text: str) -> list[Writer]:
             problems.append(f"{name}: identity must be a mapping")
             identity = {}
         for kind, value in identity.items():
-            if kind not in IDENTITY_KINDS:
+            if kind not in IDENTITY_KINDS.values():
                 problems.append(f"{name}: unknown identity kind '{kind}'")
             elif not isinstance(value, str) or not value:
                 problems.append(f"{name}: {kind} must be non-empty text")
@@ -65,7 +65,7 @@ def parse_register(text: str) -> list[Writer]:
             else:
                 claimed[kind, value] = name
         if not identity:
-            problems.append(f"{name}: needs at least one identity ({' or '.join(IDENTITY_KINDS)})")
+            problems.append(f"{name}: needs at least one identity ({' or '.join(IDENTITY_KINDS.values())})")
         may_write = entry.get("may_write") or []
         if not isinstance(may_write, list):
             problems.append(f"{name}: may_write must be a list")
@@ -77,3 +77,9 @@ def parse_register(text: str) -> list[Writer]:
     if problems:
         raise RegisterError("writers.yaml has problems:\n- " + "\n- ".join(problems))
     return writers
+
+
+def writer_for(writers: list[Writer], system: str, identity: str) -> Writer | None:
+    """The registered writer behind an identity seen in a system, or None."""
+    kind = IDENTITY_KINDS[system]
+    return next((w for w in writers if w.identity.get(kind) == identity), None)

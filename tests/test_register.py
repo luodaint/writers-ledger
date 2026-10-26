@@ -2,7 +2,7 @@ import pathlib
 
 import pytest
 
-from app.register import RegisterError, Writer, load_register, parse_register
+from app.register import RegisterError, Writer, load_register, parse_register, writer_for
 
 REPO = pathlib.Path(__file__).parent.parent
 
@@ -101,3 +101,12 @@ def test_yaml_tags_are_never_executed(tmp_path):
     with pytest.raises(RegisterError):
         parse_register(text)
     assert not marker.exists()
+
+
+def test_writer_for_matches_the_identity_of_that_system():
+    writers = load_register(REPO / "writers.yaml")
+    assert writer_for(writers, "odoo", "stock@alohas.test").id == "stock-cron"
+    assert writer_for(writers, "shopify", "stock-sync").id == "stock-cron"
+    assert writer_for(writers, "shopify", "stock@alohas.test") is None
+    assert writer_for(writers, "odoo", "admin") is None
+    assert writer_for(writers, "shopify", "unattributed") is None

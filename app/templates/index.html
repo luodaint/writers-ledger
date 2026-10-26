@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
+{% macro when(value) %}{% if value %}{{ value[:16] | replace("T", " ") }} UTC{% else %}never{% endif %}{% endmacro %}
 <header>
   <h1>Writers Ledger</h1>
   <p class="lede">Every change made to Odoo and Shopify, who made it, and whether they were allowed to.</p>
@@ -20,7 +21,8 @@
 
   <section id="writers">
     <h2>Writers</h2>
-    <p class="hint">Everything that is allowed to change Odoo or Shopify, as listed in <code>writers.yaml</code>.</p>
+    <p class="hint">Everything that is allowed to change Odoo or Shopify, as listed in <code>writers.yaml</code>.
+      Anyone seen writing who is not on the list comes first, in red.</p>
     <div class="table-wrap">
       <table>
         <thead>
@@ -30,15 +32,38 @@
           </tr>
         </thead>
         <tbody>
-        {% for w in writers %}
+        {% for u in unknown %}
+          {% if u.identity == "unattributed" %}
+          <tr class="unattributed">
+            <td><strong>unattributed</strong></td>
+            <td><span class="badge amber">Unknown</span></td>
+            <td>{{ u.system | capitalize }} did not say who made these changes.</td>
+            <td>{{ u.system }}: <em>no name given</em></td>
+            <td class="muted">–</td>
+            <td>{{ when(u.last_seen) }}</td>
+            <td class="num">{{ u.writes }}</td>
+          </tr>
+          {% else %}
+          <tr class="unregistered">
+            <td><strong>{{ u.identity }}</strong></td>
+            <td><span class="badge red">Not in the register</span></td>
+            <td>Seen writing to {{ u.system | capitalize }}, but nobody listed it in <code>writers.yaml</code>.</td>
+            <td>{{ u.system }}: <code>{{ u.identity }}</code></td>
+            <td class="muted">nothing</td>
+            <td>{{ when(u.last_seen) }}</td>
+            <td class="num">{{ u.writes }}</td>
+          </tr>
+          {% endif %}
+        {% endfor %}
+        {% for row in writers %}{% set w = row.writer %}
           <tr>
             <td><strong>{{ w.id }}</strong></td>
             <td>{% if w.owner %}{{ w.owner }}{% else %}<span class="badge amber">No owner</span>{% endif %}</td>
             <td>{{ w.purpose }}</td>
             <td>{% for kind, value in w.identity.items() %}<div>{{ kind | replace("_", " ") }}: <code>{{ value }}</code></div>{% endfor %}</td>
             <td>{% for scope in w.may_write %}<div><code>{{ scope }}</code></div>{% endfor %}</td>
-            <td class="muted">never</td>
-            <td class="num">0</td>
+            <td class="{{ 'muted' if not row.last_seen }}">{{ when(row.last_seen) }}</td>
+            <td class="num">{{ row.writes }}</td>
           </tr>
         {% endfor %}
         </tbody>
@@ -49,7 +74,44 @@
   <section id="ledger">
     <h2>Ledger</h2>
     <p class="hint">The latest 200 writes seen in Odoo and Shopify.</p>
-    <p class="empty">No writes recorded yet.</p>
+    <form class="filters" method="get" action="/#ledger">
+      {% for name, label in [("system", "System"), ("model", "What changed"), ("identity", "Who")] %}
+      <label>{{ label }}
+        <select name="{{ name }}">
+          <option value="">All</option>
+          {% for value in options[name] %}
+          <option value="{{ value }}" {{ "selected" if filters[name] == value }}>{{ value }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      {% endfor %}
+      <button type="submit">Filter</button>
+      {% if filters.values() | select | list %}<a href="/#ledger">Clear</a>{% endif %}
+    </form>
+    {% if writes %}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>When</th><th>Who</th><th>Change</th><th>What changed</th><th>Details</th></tr>
+        </thead>
+        <tbody>
+        {% for w in writes %}
+          <tr>
+            <td class="nowrap">{{ when(w.written_at) }}</td>
+            <td>{% if (w.system, w.identity) in unregistered %}<span class="badge red">{{ w.identity }}</span>
+              {% elif w.identity == "unattributed" %}<span class="badge amber">unattributed</span>
+              {% else %}{{ w.identity }}{% endif %}</td>
+            <td>{{ "created" if w.action == "create" else "changed" }}</td>
+            <td><code>{{ w.system }}:{{ w.model }}</code><div class="ref">{{ w.record_ref | replace("gid://shopify/", "") }}</div></td>
+            <td class="details">{% for key, value in w.payload.items() %}<span>{{ key }}: <strong>{{ value | join(", ") if value is iterable and value is not string else value }}</strong></span>{% endfor %}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="empty">No writes recorded yet{% if filters.values() | select | list %} for this filter{% endif %}.</p>
+    {% endif %}
   </section>
 </main>
 <footer>
