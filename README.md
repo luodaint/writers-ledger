@@ -114,11 +114,13 @@ with higher counts. To start from zero, run
 1. Log in to Odoo at <http://127.0.0.1:8069> as `admin` (`ODOO_ADMIN_PASSWORD`, or
    `local-only-admin`).
 2. Open a shoe, change its **Sales Price** and save.
-3. Within about 10 seconds, a new `unknown_writer` finding for `admin` on
-   `odoo:product.product` appears, with 6 writes, one per size. With triage on,
-   Claude rates it.
-4. Register `admin` for `odoo:product.product` in `writers.yaml` and press **Run
-   check now**: the finding resolves.
+3. Within about 10 seconds, a new finding for `admin` on `odoo:product.product`
+   appears, with 6 writes, one per size: `unknown_writer`, or `out_of_scope` if you
+   already registered `admin` in the demo above. With triage on, Claude rates it.
+4. Allow it in `writers.yaml` and press **Run check now**: the finding resolves.
+   After the demo, add `odoo:product.product` to the `may_write` of its `admin`
+   entry; on a fresh demo, add an entry for `admin`. An identity can belong to one
+   writer only, so never add a second one.
 
 **3. A real Shopify dev store, still on your machine.** Not built yet. The real
 Shopify API would answer "who made this change" instead of the fake copying it. It

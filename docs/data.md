@@ -95,8 +95,12 @@ ledger catches a change a person made by hand.
 
 Two things change the result:
 
-- If you already did the README demo's fix, `admin` is registered for
-  `odoo:stock.quant`, so a price change is `out_of_scope` straight away.
+- **If you already did the README demo's fix**, `admin` belongs to
+  `milan-stock-reset`, allowed `odoo:stock.quant`, so the price change shows as
+  `out_of_scope` straight away. Don't add the entry above: an identity can belong
+  to one writer only, and a second one is an error that pauses the checks. Add
+  `odoo:product.product` to that entry's `may_write` instead, and the price finding
+  resolves.
 - Counting stock as `admin` (Odoo's Physical Inventory) adds to the forgotten
   cron's finding instead of making a new one: it is the same rule, model and
   identity, so the same fingerprint.
