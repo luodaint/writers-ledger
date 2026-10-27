@@ -165,3 +165,38 @@ def test_the_cache_key_is_the_finding_its_bucket_and_the_prompts(monkeypatch):
 def test_no_key_means_triage_is_off(monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     assert triage.client() is None
+
+
+# --- a fix written by Claude can't grant more than the finding is about -------------------
+
+GRANTS_MORE = """- id: helper
+  owner: ops
+  identity: { odoo_user: admin }
+  may_write: [odoo:stock.quant, odoo:sale.order, shopify:product]"""
+
+
+@pytest.mark.parametrize("fix", [
+    GRANTS_MORE,  # scopes nobody saw written
+    "- id: helper\n  identity: { odoo_user: root }\n  may_write: [odoo:stock.quant]",  # someone else's login
+])
+def test_a_suggested_fix_that_grants_more_than_the_finding_is_dropped(fix):
+    result, _ = run(Claude(RATED, EXPLAINED | {"suggested_fix": fix}))
+    assert result["suggested_fix"] == ""
+    assert result["explanation"] == EXPLAINED["explanation"]
+
+
+@pytest.mark.parametrize("fix", [
+    "- id: milan-reset\n  owner: ops\n  identity: { odoo_user: admin }\n  may_write: [odoo:stock.quant]",
+    "Find out who uses the admin key and revoke it.",
+])
+def test_a_suggested_fix_within_the_finding_is_kept(fix):
+    result, _ = run(Claude(RATED, EXPLAINED | {"suggested_fix": fix}))
+    assert result["suggested_fix"] == fix
+
+
+def test_a_registered_writer_may_keep_what_it_already_has():
+    f = finding(rule="out_of_scope", identity="sync@alohas.test", writer_id="shopify-odoo-sync",
+                model="product.product", fingerprint="out_of_scope|odoo|product.product|sync@alohas.test")
+    fix = "identity: { odoo_user: [login] }\nmay_write: [odoo:sale.order, odoo:product.product]"
+    result, _ = run(Claude(RATED, EXPLAINED | {"suggested_fix": fix}), f)
+    assert result["suggested_fix"] == fix

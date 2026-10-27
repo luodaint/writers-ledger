@@ -9,6 +9,26 @@ explained in plain words.
 > Work in progress (Phase 3 of 4: triage). The full README, with the cost per
 > check run and the case questions answered, comes in Phase 4.
 
+## What it looks like
+
+These screenshots come from the offline demo (`make up`, `make seed`, `make traffic`)
+with triage on.
+
+**Findings**, most urgent first. The rules decide what is wrong. Claude rates each
+finding, and explains the high and critical ones in plain words with a fix to paste.
+
+![Four findings. The admin-key cron, raised to critical by Claude; the sync bot writing product prices; Barcelona stock 3 apart between Odoo and Shopify; and a pricing script nobody owns. Each shows Claude's explanation, a suggested fix and who to ask.](docs/screenshots/findings.png)
+
+**Writers** shows the register and what each writer did. Anyone seen writing who isn't
+in the register comes first, in red.
+
+![The writers table. The admin login, not in the register, is in red at the top. Next comes an amber row for Shopify changes without an author. Then come the four registered writers, each with its owner, what it may change, its last activity and its number of writes.](docs/screenshots/writers.png)
+
+**Ledger** shows the latest writes seen in Odoo and Shopify. You can filter it by
+system, what changed and who.
+
+![The ledger. Each row is one write: when, who, what changed and the details, such as SKU, location and quantity. Writes by the admin login are marked in red.](docs/screenshots/ledger.png)
+
 ## Run it offline
 
 ```sh
@@ -106,6 +126,13 @@ shaped like an email address or a phone number. A login that is an email address
 goes as `[login]` and is put back only on the page. Logins and app names come from
 outside, so the prompt treats the finding as data, not instructions. Answers are
 checked against a JSON schema, capped in length and shown as plain text.
+
+**A fix Claude writes can't grant more than the finding is about.** Logins and app
+names are chosen by whoever writes, so a name could try to steer the suggested
+`writers.yaml` entry. Before an entry is shown, code checks that every scope in it is
+the one that was changed or one the writer already has. It also checks that every
+identity in it is the writer's own. If not, the card shows the rule's own advice
+instead. The card says the fix was written by Claude, to be checked before pasting.
 
 **Cost.** Every call is logged with its tokens and cost (never the prompt or the
 answer). The footer shows the cost of the last triage run. A finding is triaged once

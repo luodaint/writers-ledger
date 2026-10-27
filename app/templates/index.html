@@ -49,9 +49,9 @@
         <h3>{{ titles[f.rule] }}</h3>
       </div>
       <p>{{ f.summary }}</p>
-      {% if t %}<p>{{ (t.explanation or t.likely_cause) | replace("[login]", f.identity) }}</p>{% endif %}
+      {% if t %}<p><strong>Claude:</strong> {{ (t.explanation or t.likely_cause) | replace("[login]", f.identity) }}</p>{% endif %}
       {% if t.suggested_fix %}
-      <div class="fix"><strong>Suggested fix:</strong><pre>{{ t.suggested_fix | replace("[login]", f.identity) }}</pre></div>
+      <div class="fix"><strong>Suggested fix, written by Claude.</strong> Check it before you paste it.<pre>{{ t.suggested_fix | replace("[login]", f.identity) }}</pre></div>
       {% else %}
       <p class="fix"><strong>Suggested fix:</strong> {{ fixes[f.rule] }}</p>
       {% endif %}

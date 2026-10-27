@@ -72,4 +72,8 @@ where it got it wrong, what I changed by hand.
   - **`make eval`** scores only the rating, so a run costs $0.0027 instead of $0.059.
   - **The collector** requires the seed's end mark.
   - **Skipped:** the efficiency, reuse and altitude reviews' remaining ideas are listed in the PR. App code is 776 lines.
+- **Automated security review after the push** (valid):
+  - **The finding:** a Shopify app name or Odoo login is chosen by whoever writes, so prompt injection could steer Claude's "ready-to-paste" `writers.yaml` entry into granting more access.
+  - **The fix:** before an entry is shown, code checks that every scope in it is the one changed or one the writer already has, and every identity is the writer's own. Otherwise the card falls back to the rule's advice. The card now labels Claude's text, so the fix is checked before pasting.
+  - **Cost:** 13 lines, which takes app code to 789.
 - **Changed by hand:** nothing.

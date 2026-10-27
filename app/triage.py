@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import pathlib
+import re
 
 import anthropic
 import yaml
@@ -23,6 +24,8 @@ PRICES = {"claude-haiku-5-5": (0.10, 0.50), "claude-sonnet-5-5": (2.00, 10.00), 
 MAX_TEXT = 1500  # characters kept of any answer
 PER_RUN = 20  # findings triaged per run, so a flood of findings can't run up the bill
 BUCKETS = (5, 1)  # writes round down to the rubric's one count line (triage.yaml): a growing count rarely re-pays
+SCOPE = re.compile(r"\b(?:odoo|shopify):[a-z][a-z0-9_.]*[a-z0-9_]")
+IDENTITY = re.compile(r"(?:odoo_user|shopify_app)\s*:\s*[\"']?([^\"'\n},]+)")
 FINAL = (anthropic.BadRequestError, anthropic.NotFoundError, anthropic.UnprocessableEntityError)  # asking again won't help
 
 
@@ -91,6 +94,19 @@ def ask(claude, step: str, payload: dict) -> tuple[dict, dict]:
     return answer, call
 
 
+def vetted(fix: str, payload: dict) -> str:
+    """Claude's suggested fix, or "" if it would let anyone write more than this finding is about.
+
+    Logins and app names come from outside, so a fix could be steered into granting more. Every
+    scope in it must be the one that was changed or one the writer already has, and every
+    identity the one that wrote."""
+    allowed = {payload["what_changed"], *(payload["writer"] or {}).get("may_write", [])}
+    if set(SCOPE.findall(fix)) <= allowed and {i.strip() for i in IDENTITY.findall(fix)} <= {payload["identity"], "[login]"}:
+        return fix
+    log.warning("Dropped a suggested fix that grants more than the finding is about")
+    return ""
+
+
 def triage(claude, payload: dict) -> tuple[dict | None, list[dict]]:
     """Rate with the small model, then explain what is high or critical once the rule's floor applies.
 
@@ -104,7 +120,7 @@ def triage(claude, payload: dict) -> tuple[dict | None, list[dict]]:
         if result and (severity := rules.raised(payload["rule_severity"], result["severity"])) in ("critical", "high"):
             explained, call = ask(claude, "explain", payload | {"severity": severity})
             calls.append(call)
-            result |= explained
+            result |= explained and explained | {"suggested_fix": vetted(explained["suggested_fix"], payload)}
         return result, calls
     except FINAL as e:
         log.warning("Triage request refused, not asking again for this input: %s", type(e).__name__)
