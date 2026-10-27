@@ -89,7 +89,8 @@ Module boundaries:
 
 ## Commands
 
-- Tests: `make test`. Lint: `make lint` (ruff, configured in `pyproject.toml`).
+- Tests: `make test`. Lint: `make lint`, ruff's lint and format check, configured in
+  `pyproject.toml` (175 columns). `make fmt` fixes what ruff can and formats the code.
 - Offline stack: `docker compose -f docker-compose.fake.yml up`
 - End to end: `make up seed traffic smoke`, exactly what CI runs.
 - Other targets (`check`, `eval`, `reset`) are added in the phase that needs

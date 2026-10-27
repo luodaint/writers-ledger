@@ -151,7 +151,8 @@ including how the Odoo API keys are handled, and
 
 ```sh
 make test    # Python 3.12 venv via uv, then pytest
-make lint    # ruff
+make lint    # ruff: lint and format check, as in CI
+make fmt     # fix what ruff can, then format
 make smoke   # after `make up seed traffic`: every writer is in the ledger, no customer data
 make eval    # Claude's triage on evals/cases.yaml (needs ANTHROPIC_API_KEY in .env)
 make loc     # app code line count

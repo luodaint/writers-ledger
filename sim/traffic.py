@@ -10,6 +10,7 @@ Odoo writes go through the JSON-2 API with each writer's own key, so Odoo record
 who did what. Shopify writes go through the Admin API as each writer's own app:
 the fake Shopify offline, your dev store live. Days are compressed into seconds.
 """
+
 import json
 import os
 import random
@@ -23,8 +24,12 @@ KEYS_FILE = os.environ.get("ODOO_KEYS_FILE", "/secrets/odoo-keys.json")
 rng = random.Random(int(os.environ.get("TRAFFIC_SEED", "7")))
 DRIFT = ("AL05-38", "Barcelona")  # incident 4: the SKU and shop whose stock push goes wrong
 # Made-up customers, so the redaction in front of the LLM has something to remove.
-CUSTOMERS = [("Laura Pérez", "laura.perez@example.com"), ("Marco Rossi", "marco.rossi@example.com"),
-             ("Ana Vidal", "ana.vidal@example.com"), ("Giulia Bianchi", "giulia.b@example.com")]
+CUSTOMERS = [
+    ("Laura Pérez", "laura.perez@example.com"),
+    ("Marco Rossi", "marco.rossi@example.com"),
+    ("Ana Vidal", "ana.vidal@example.com"),
+    ("Giulia Bianchi", "giulia.b@example.com"),
+]
 
 
 class Odoo:
@@ -34,7 +39,8 @@ class Odoo:
         with open(KEYS_FILE) as f:
             key = json.load(f)[role]["key"]
         self.http = httpx.Client(
-            base_url=os.environ["ODOO_URL"], timeout=30,
+            base_url=os.environ["ODOO_URL"],
+            timeout=30,
             headers={"Authorization": f"bearer {key}", "X-Odoo-Database": os.environ.get("ODOO_DB", "writers")},
         )
 

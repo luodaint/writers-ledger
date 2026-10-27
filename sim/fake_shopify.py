@@ -10,6 +10,7 @@
 - State (stock, orders, product events, tokens) is kept in a JSON file on a volume,
   so a rebuild doesn't reset Shopify while Odoo keeps its stock.
 """
+
 import base64
 import hashlib
 import hmac
@@ -51,8 +52,7 @@ lock = threading.Lock()
 
 
 def save() -> None:
-    state = {"levels": [[sku, loc, q] for (sku, loc), q in LEVELS.items()], "tokens": TOKENS,
-             "order_apps": ORDER_APPS, "events": EVENTS, "next": NEXT}
+    state = {"levels": [[sku, loc, q] for (sku, loc), q in LEVELS.items()], "tokens": TOKENS, "order_apps": ORDER_APPS, "events": EVENTS, "next": NEXT}
     with open(STATE_FILE + ".tmp", "w") as f:
         json.dump(state, f)
     os.replace(STATE_FILE + ".tmp", STATE_FILE)
@@ -80,10 +80,14 @@ def emit(topic: str, payload: dict) -> None:
     body = json.dumps(payload).encode()
     signature = base64.b64encode(hmac.new(APPS["writers-ledger"].encode(), body, hashlib.sha256).digest())
     headers = {
-        "Content-Type": "application/json", "X-Shopify-Topic": topic,
-        "X-Shopify-Hmac-Sha256": signature.decode(), "X-Shopify-Shop-Domain": SHOP,
-        "X-Shopify-API-Version": API_VERSION, "X-Shopify-Webhook-Id": str(uuid.uuid4()),
-        "X-Shopify-Event-Id": str(uuid.uuid4()), "X-Shopify-Triggered-At": now(),
+        "Content-Type": "application/json",
+        "X-Shopify-Topic": topic,
+        "X-Shopify-Hmac-Sha256": signature.decode(),
+        "X-Shopify-Shop-Domain": SHOP,
+        "X-Shopify-API-Version": API_VERSION,
+        "X-Shopify-Webhook-Id": str(uuid.uuid4()),
+        "X-Shopify-Event-Id": str(uuid.uuid4()),
+        "X-Shopify-Triggered-At": now(),
     }
 
     def deliver():
@@ -96,17 +100,18 @@ def emit(topic: str, payload: dict) -> None:
 
 
 def variants_of(title: str) -> list[dict]:
-    return [{"sku": sku, "inventory_item_id": ITEMS[sku], "price": f"{120 + 10 * PRODUCTS[name] - 10}.00"}
-            for sku, name, _ in catalog.variants() if name == title]
+    return [{"sku": sku, "inventory_item_id": ITEMS[sku], "price": f"{120 + 10 * PRODUCTS[name] - 10}.00"} for sku, name, _ in catalog.variants() if name == title]
 
 
 def catalog_query(app, variables, query):
     return {
         "locations": {"nodes": [{"id": f"gid://shopify/Location/{n}", "name": name} for name, n in LOCATIONS.items()]},
-        "productVariants": {"nodes": [
-            {"sku": sku, "inventoryItem": {"id": f"gid://shopify/InventoryItem/{ITEMS[sku]}"},
-             "product": {"id": f"gid://shopify/Product/{PRODUCTS[name]}", "title": name}}
-            for sku, name, _ in catalog.variants()]},
+        "productVariants": {
+            "nodes": [
+                {"sku": sku, "inventoryItem": {"id": f"gid://shopify/InventoryItem/{ITEMS[sku]}"}, "product": {"id": f"gid://shopify/Product/{PRODUCTS[name]}", "title": name}}
+                for sku, name, _ in catalog.variants()
+            ]
+        },
     }
 
 
@@ -123,9 +128,16 @@ def set_stock(app, variables, query):
             changed.append((ITEMS[sku], LOCATIONS[location], q["quantity"]))
     save()
     for item, location, quantity in changed:  # Shopify's payload: no word on which app did it
-        emit("inventory_levels/update", {
-            "inventory_item_id": item, "location_id": location, "available": quantity, "updated_at": now(),
-            "admin_graphql_api_id": f"gid://shopify/InventoryLevel/{location}?inventory_item_id={item}"})
+        emit(
+            "inventory_levels/update",
+            {
+                "inventory_item_id": item,
+                "location_id": location,
+                "available": quantity,
+                "updated_at": now(),
+                "admin_graphql_api_id": f"gid://shopify/InventoryLevel/{location}?inventory_item_id={item}",
+            },
+        )
     return {"inventorySetQuantities": {"userErrors": []}}
 
 
@@ -133,12 +145,20 @@ def update_product(app, variables, query):
     product_id = num(variables["product"]["id"])
     title = next(t for t, n in PRODUCTS.items() if n == product_id)
     gid = f"gid://shopify/Product/{product_id}"
-    EVENTS.setdefault(gid, []).insert(0, {"appTitle": app, "attributeToApp": True, "attributeToUser": False,
-                                          "action": "update", "createdAt": now()})
+    EVENTS.setdefault(gid, []).insert(0, {"appTitle": app, "attributeToApp": True, "attributeToUser": False, "action": "update", "createdAt": now()})
     save()
-    emit("products/update", {
-        "id": product_id, "admin_graphql_api_id": gid, "title": title, "handle": title.lower().replace(" ", "-"),
-        "status": "active", "updated_at": now(), "variants": variants_of(title)})
+    emit(
+        "products/update",
+        {
+            "id": product_id,
+            "admin_graphql_api_id": gid,
+            "title": title,
+            "handle": title.lower().replace(" ", "-"),
+            "status": "active",
+            "updated_at": now(),
+            "variants": variants_of(title),
+        },
+    )
     return {"productUpdate": {"userErrors": []}}
 
 
@@ -160,9 +180,15 @@ def inventory_level(app, variables, query):
     return {"inventoryLevel": {"item": {"sku": SKU_OF[int(item)]}, "location": {"name": LOCATION_OF[int(location)]}}}
 
 
-OPERATIONS = {"Catalog": catalog_query, "SetStock": set_stock, "UpdateProduct": update_product,
-              "OrderApp": order_app, "OrderEvents": order_events, "ProductEvents": product_events,
-              "InventoryLevel": inventory_level}
+OPERATIONS = {
+    "Catalog": catalog_query,
+    "SetStock": set_stock,
+    "UpdateProduct": update_product,
+    "OrderApp": order_app,
+    "OrderEvents": order_events,
+    "ProductEvents": product_events,
+    "InventoryLevel": inventory_level,
+}
 
 
 def checkout(skus: list[str]) -> dict:
@@ -174,14 +200,25 @@ def checkout(skus: list[str]) -> dict:
     save()
     first, last, email = random.choice(CUSTOMERS)
     lines = [{"sku": sku, "quantity": 1, "price": "120.00", "name": sku} for sku in skus]
-    emit("orders/create", {
-        "id": order_id, "admin_graphql_api_id": gid, "name": f"#{order_id}", "created_at": now(),
-        "updated_at": now(), "app_id": 580111, "source_name": "web", "currency": "EUR",
-        "total_price": f"{120 * len(skus)}.00", "financial_status": "paid", "email": email,
-        "customer": {"first_name": first, "last_name": last, "email": email},
-        "shipping_address": {"first_name": first, "last_name": last, "address1": "Carrer de Mallorca 1",
-                             "city": "Barcelona", "zip": "08013", "phone": "+34 600 000 000"},
-        "line_items": lines})
+    emit(
+        "orders/create",
+        {
+            "id": order_id,
+            "admin_graphql_api_id": gid,
+            "name": f"#{order_id}",
+            "created_at": now(),
+            "updated_at": now(),
+            "app_id": 580111,
+            "source_name": "web",
+            "currency": "EUR",
+            "total_price": f"{120 * len(skus)}.00",
+            "financial_status": "paid",
+            "email": email,
+            "customer": {"first_name": first, "last_name": last, "email": email},
+            "shipping_address": {"first_name": first, "last_name": last, "address1": "Carrer de Mallorca 1", "city": "Barcelona", "zip": "08013", "phone": "+34 600 000 000"},
+            "line_items": lines,
+        },
+    )
     return {"order": gid}
 
 
@@ -204,8 +241,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/admin/oauth/access_token":
             form = {k: v[0] for k, v in parse_qs(body.decode()).items()}
             client_id = form.get("client_id", "")
-            if form.get("grant_type") != "client_credentials" or not hmac.compare_digest(
-                    APPS.get(client_id, ""), form.get("client_secret", "")) or client_id not in APPS:
+            if form.get("grant_type") != "client_credentials" or not hmac.compare_digest(APPS.get(client_id, ""), form.get("client_secret", "")) or client_id not in APPS:
                 return self.reply(400, {"error": "invalid_client"})
             token = secrets.token_hex(16)
             with lock:
@@ -226,8 +262,7 @@ class Handler(BaseHTTPRequestHandler):
         if not operation:
             return self.reply(200, {"errors": [{"message": "The fake Shopify does not know this operation."}]})
         if app not in MUTATIONS.get(match.group(1), {app}):
-            return self.reply(200, {"errors": [{"message": "Access denied for this field.",
-                                                "extensions": {"code": "ACCESS_DENIED"}}]})
+            return self.reply(200, {"errors": [{"message": "Access denied for this field.", "extensions": {"code": "ACCESS_DENIED"}}]})
         try:
             with lock:
                 return self.reply(200, {"data": operation(app, request.get("variables") or {}, request["query"])})

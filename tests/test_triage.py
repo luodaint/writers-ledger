@@ -21,17 +21,27 @@ WRITERS = parse_register("""
   identity: { shopify_app: pricing-tool }
   may_write: [shopify:product]
 """)
-RATED = {"severity": "critical", "category": "credential_misuse", "likely_cause": "A forgotten cron.",
-         "confidence": 0.9}
-EXPLAINED = {"explanation": "Someone uses the admin key.", "suggested_fix": "- id: milan-reset\n  owner: ops",
-             "who_to_ask": "Nobody owns it yet: assign an owner."}
+RATED = {"severity": "critical", "category": "credential_misuse", "likely_cause": "A forgotten cron.", "confidence": 0.9}
+EXPLAINED = {"explanation": "Someone uses the admin key.", "suggested_fix": "- id: milan-reset\n  owner: ops", "who_to_ask": "Nobody owns it yet: assign an owner."}
 
 
 def finding(**over):
-    return {"fingerprint": "unknown_writer|odoo|stock.quant|admin", "rule": "unknown_writer", "severity": "high",
-            "system": "odoo", "model": "stock.quant", "identity": "admin", "writer_id": None, "owner": "",
-            "count": 12, "first_seen": "2026-10-26T10:00:00Z", "last_seen": "2026-10-27T03:00:00Z", "facts": {},
-            "summary": "admin changed odoo:stock.quant 12 times, but writers.yaml doesn't list it.", "status": "open"} | over
+    return {
+        "fingerprint": "unknown_writer|odoo|stock.quant|admin",
+        "rule": "unknown_writer",
+        "severity": "high",
+        "system": "odoo",
+        "model": "stock.quant",
+        "identity": "admin",
+        "writer_id": None,
+        "owner": "",
+        "count": 12,
+        "first_seen": "2026-10-26T10:00:00Z",
+        "last_seen": "2026-10-27T03:00:00Z",
+        "facts": {},
+        "summary": "admin changed odoo:stock.quant 12 times, but writers.yaml doesn't list it.",
+        "status": "open",
+    } | over
 
 
 class Claude:
@@ -47,9 +57,12 @@ class Claude:
         if isinstance(answer, Exception):
             raise answer
         text = answer if isinstance(answer, str) else json.dumps(answer)
-        return SimpleNamespace(model=request["model"], stop_reason="refusal" if answer == "refuse" else "end_turn",
-                               usage=SimpleNamespace(input_tokens=1000, output_tokens=200),
-                               content=[SimpleNamespace(type="text", text=text)])
+        return SimpleNamespace(
+            model=request["model"],
+            stop_reason="refusal" if answer == "refuse" else "end_turn",
+            usage=SimpleNamespace(input_tokens=1000, output_tokens=200),
+            content=[SimpleNamespace(type="text", text=text)],
+        )
 
 
 def run(claude, f=None):
@@ -58,9 +71,11 @@ def run(claude, f=None):
 
 # --- what reaches the model ------------------------------------------------------------
 
+
 def test_no_email_or_phone_reaches_the_model_and_logins_become_a_token():
-    f = finding(identity="marta.puig@alohas.com", fingerprint="unknown_writer|odoo|sale.order|marta.puig@alohas.com",
-                model="sale.order", facts={"note": "call +34 600 000 000"})
+    f = finding(
+        identity="marta.puig@alohas.com", fingerprint="unknown_writer|odoo|sale.order|marta.puig@alohas.com", model="sale.order", facts={"note": "call +34 600 000 000"}
+    )
     claude = Claude(RATED, EXPLAINED)
     run(claude, f)
     sent = json.dumps([r["messages"] for r in claude.requests] + [r["system"] for r in claude.requests])
@@ -70,12 +85,9 @@ def test_no_email_or_phone_reaches_the_model_and_logins_become_a_token():
 
 def test_the_model_gets_an_allowlisted_summary_of_the_finding():
     payload, _ = triage.prepare(finding(), WRITERS)
-    assert payload == {"rule": "unknown_writer", "rule_severity": "high", "what_changed": "odoo:stock.quant",
-                       "identity": "admin", "writes": 12, "writer": None, "stock": None}
-    owned, _ = triage.prepare(finding(rule="ownerless_writer", identity="pricing-tool", writer_id="pmo-pricing-script",
-                                      system="shopify", model="product"), WRITERS)
-    assert owned["writer"] == {"id": "pmo-pricing-script", "owner": "", "may_write": ["shopify:product"],
-                               "purpose": "Bulk-updates product metafields for drops"}
+    assert payload == {"rule": "unknown_writer", "rule_severity": "high", "what_changed": "odoo:stock.quant", "identity": "admin", "writes": 12, "writer": None, "stock": None}
+    owned, _ = triage.prepare(finding(rule="ownerless_writer", identity="pricing-tool", writer_id="pmo-pricing-script", system="shopify", model="product"), WRITERS)
+    assert owned["writer"] == {"id": "pmo-pricing-script", "owner": "", "may_write": ["shopify:product"], "purpose": "Bulk-updates product metafields for drops"}
 
 
 def test_finding_data_goes_in_the_user_turn_not_the_system_prompt():
@@ -86,6 +98,7 @@ def test_finding_data_goes_in_the_user_turn_not_the_system_prompt():
 
 
 # --- two tiers and the severity floor --------------------------------------------------
+
 
 def test_critical_and_high_findings_are_explained_by_the_large_model():
     claude = Claude(RATED, EXPLAINED)
@@ -112,8 +125,8 @@ def test_a_high_rule_is_explained_even_if_claude_rates_it_lower():
 
 # --- when things go wrong --------------------------------------------------------------
 
-@pytest.mark.parametrize("answer", ["refuse", "not json", RATED | {"severity": "catastrophic"},
-                                    RATED | {"confidence": "very"}, {"severity": "high"}])
+
+@pytest.mark.parametrize("answer", ["refuse", "not json", RATED | {"severity": "catastrophic"}, RATED | {"confidence": "very"}, {"severity": "high"}])
 def test_a_refusal_or_an_answer_off_the_schema_is_no_triage(answer):
     result, calls = run(Claude(answer))
     assert result == {} and len(calls) == 1
@@ -123,8 +136,7 @@ API = httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
 DOWN = anthropic.APIConnectionError(request=API)
 
 
-@pytest.mark.parametrize("error", [DOWN, anthropic.AuthenticationError(
-    "bad key", response=httpx2.Response(401, request=API), body=None)])
+@pytest.mark.parametrize("error", [DOWN, anthropic.AuthenticationError("bad key", response=httpx2.Response(401, request=API), body=None)])
 def test_claude_unreachable_or_a_bad_key_means_try_again_later(error):
     result, calls = run(Claude(error))
     assert result is None and calls == []
@@ -143,10 +155,10 @@ def test_long_answers_are_capped():
 
 # --- cost and cache ---------------------------------------------------------------------
 
+
 def test_each_call_is_priced_by_the_model_that_served_it():
     _, calls = run(Claude(RATED | {"severity": "medium"}), finding(severity="medium"))
-    assert calls == [{"model": triage.SMALL, "input_tokens": 1000, "output_tokens": 200,
-                      "cost_usd": pytest.approx(1000 * 0.10 / 1e6 + 200 * 0.50 / 1e6)}]
+    assert calls == [{"model": triage.SMALL, "input_tokens": 1000, "output_tokens": 200, "cost_usd": pytest.approx(1000 * 0.10 / 1e6 + 200 * 0.50 / 1e6)}]
     assert triage.cost("some-future-model", SimpleNamespace(input_tokens=1, output_tokens=1)) is None
 
 
@@ -175,28 +187,39 @@ GRANTS_MORE = """- id: helper
   may_write: [odoo:stock.quant, odoo:sale.order, shopify:product]"""
 
 
-@pytest.mark.parametrize("fix", [
-    GRANTS_MORE,  # scopes nobody saw written
-    "- id: helper\n  identity: { odoo_user: root }\n  may_write: [odoo:stock.quant]",  # someone else's login
-])
+@pytest.mark.parametrize(
+    "fix",
+    [
+        GRANTS_MORE,  # scopes nobody saw written
+        "- id: helper\n  identity: { odoo_user: root }\n  may_write: [odoo:stock.quant]",  # someone else's login
+    ],
+)
 def test_a_suggested_fix_that_grants_more_than_the_finding_is_dropped(fix):
     result, _ = run(Claude(RATED, EXPLAINED | {"suggested_fix": fix}))
     assert result["suggested_fix"] == ""
     assert result["explanation"] == EXPLAINED["explanation"]
 
 
-@pytest.mark.parametrize("fix", [
-    "- id: milan-reset\n  owner: ops\n  identity: { odoo_user: admin }\n  may_write: [odoo:stock.quant]",
-    "Find out who uses the admin key and revoke it.",
-])
+@pytest.mark.parametrize(
+    "fix",
+    [
+        "- id: milan-reset\n  owner: ops\n  identity: { odoo_user: admin }\n  may_write: [odoo:stock.quant]",
+        "Find out who uses the admin key and revoke it.",
+    ],
+)
 def test_a_suggested_fix_within_the_finding_is_kept(fix):
     result, _ = run(Claude(RATED, EXPLAINED | {"suggested_fix": fix}))
     assert result["suggested_fix"] == fix
 
 
 def test_a_registered_writer_may_keep_what_it_already_has():
-    f = finding(rule="out_of_scope", identity="sync@alohas.test", writer_id="shopify-odoo-sync",
-                model="product.product", fingerprint="out_of_scope|odoo|product.product|sync@alohas.test")
+    f = finding(
+        rule="out_of_scope",
+        identity="sync@alohas.test",
+        writer_id="shopify-odoo-sync",
+        model="product.product",
+        fingerprint="out_of_scope|odoo|product.product|sync@alohas.test",
+    )
     fix = "identity: { odoo_user: [login] }\nmay_write: [odoo:sale.order, odoo:product.product]"
     result, _ = run(Claude(RATED, EXPLAINED | {"suggested_fix": fix}), f)
     assert result["suggested_fix"] == fix

@@ -101,3 +101,15 @@ where it got it wrong, what I changed by hand.
   - a dead class, two duplicate tests, and a check time that had lost its date.
   - **Skipped:** building the row links in Python and two new SQLite indexes. Each costs app code lines, for gains only on a ledger far larger than the demo. App code is 801 lines.
 - **Changed by hand:** nothing.
+
+## Between phases: ruff format
+
+- **Asked:** ruff as the formatter too, at 175 columns, checked in CI, with an automatic fix.
+- **Done:**
+  - `make fmt` fixes what ruff can and formats the code;
+  - `make lint`, which CI runs, now fails on unformatted code too.
+  - CI checks but doesn't commit fixes, because the workflow token stays read-only.
+- **Got wrong:**
+  - **The formatter made app code longer, not shorter: 804 to 856 lines.** It lays out a call or dict that doesn't fit on one line with one item per line, where the code had packed several.
+  - **It moved one comment off its line** (Sonnet's fallback price) and let another run past 175 columns. Both were fixed by hand.
+- **Changed by hand:** nothing.

@@ -2,6 +2,7 @@
 
 Polling sees only the last writer of each record; see README for the audit-trail answer.
 """
+
 import json
 import logging
 import os
@@ -67,15 +68,15 @@ def lookup(http, cache: dict, field: str, value):
 
 
 def to_write(model: str, record: dict, resolve) -> dict:
-    payload = {
-        LOOKUPS[f][2] if f in LOOKUPS else f: resolve(f, record[f]) if f in LOOKUPS else record[f]
-        for f in MODELS[model]
-    }
+    payload = {LOOKUPS[f][2] if f in LOOKUPS else f: resolve(f, record[f]) if f in LOOKUPS else record[f] for f in MODELS[model]}
     return {
-        "system": "odoo", "model": model, "record_ref": str(record["id"]),
+        "system": "odoo",
+        "model": model,
+        "record_ref": str(record["id"]),
         "identity": ledger.identity(resolve("write_uid", record["write_uid"])),
         "action": "create" if record["create_date"] == record["write_date"] else "write",
-        "written_at": ledger.utc(record["write_date"]), "payload": payload,
+        "written_at": ledger.utc(record["write_date"]),
+        "payload": payload,
     }
 
 
@@ -93,9 +94,16 @@ def poll_model(http, conn, model: str, cache: dict, start: str) -> int:
     # Read every page: one bulk write can stamp thousands of records with the same second.
     records = []
     while len(records) % PAGE == 0:
-        page = call(http, model, "search_read", domain=[["write_date", ">=", since], *DOMAINS.get(model, [])],
-                    fields=["write_uid", "write_date", "create_date", *MODELS[model]],
-                    order="write_date, id", limit=PAGE, offset=len(records))
+        page = call(
+            http,
+            model,
+            "search_read",
+            domain=[["write_date", ">=", since], *DOMAINS.get(model, [])],
+            fields=["write_uid", "write_date", "create_date", *MODELS[model]],
+            order="write_date, id",
+            limit=PAGE,
+            offset=len(records),
+        )
         records += page
         if not page:
             break

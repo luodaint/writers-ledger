@@ -36,7 +36,6 @@ def test_a_stock_count_brings_back_a_quant_odoo_deleted_at_zero():
     odoo = Odoo(quants=[])
     assert traffic.adjust_stock(odoo, {"AL10-39": 5}, {"Milan": 14}, "AL10-39", "Milan") == 0
     assert odoo.calls[1:] == [
-        ("stock.quant", "create", {"vals_list": [{"product_id": 5, "location_id": 14, "inventory_quantity": 0}],
-                                   "context": CONTEXT}),
+        ("stock.quant", "create", {"vals_list": [{"product_id": 5, "location_id": 14, "inventory_quantity": 0}], "context": CONTEXT}),
         ("stock.quant", "action_apply_inventory", {"ids": [99], "context": CONTEXT}),
     ]

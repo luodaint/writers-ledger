@@ -44,22 +44,16 @@ def test_duplicate_id_is_rejected():
 
 
 def test_writer_without_identity_is_rejected():
-    assert "stock-cron: needs at least one identity" in problems(
-        VALID.replace("{ odoo_user: stock@alohas.test }", "{}")
-    )
+    assert "stock-cron: needs at least one identity" in problems(VALID.replace("{ odoo_user: stock@alohas.test }", "{}"))
 
 
 def test_unknown_identity_kind_is_rejected():
-    assert "unknown identity kind 'sap_user'" in problems(
-        VALID.replace("odoo_user:", "sap_user:")
-    )
+    assert "unknown identity kind 'sap_user'" in problems(VALID.replace("odoo_user:", "sap_user:"))
 
 
 @pytest.mark.parametrize("scope", ["stock.quant", "sap:stock.quant", "odoo:", "odoo:Stock Quant"])
 def test_may_write_must_be_system_colon_model(scope):
-    assert f"bad may_write entry '{scope}'" in problems(
-        VALID.replace("[odoo:stock.quant]", f"['{scope}']")
-    )
+    assert f"bad may_write entry '{scope}'" in problems(VALID.replace("[odoo:stock.quant]", f"['{scope}']"))
 
 
 def test_missing_owner_key_is_rejected_but_empty_owner_is_allowed():
@@ -69,9 +63,7 @@ def test_missing_owner_key_is_rejected_but_empty_owner_is_allowed():
 
 def test_identity_claimed_by_two_writers_is_rejected():
     other = VALID.replace("id: stock-cron", "id: other-cron")
-    assert "identity 'stock@alohas.test' is claimed by stock-cron and other-cron" in problems(
-        VALID + other
-    )
+    assert "identity 'stock@alohas.test' is claimed by stock-cron and other-cron" in problems(VALID + other)
 
 
 def test_misspelt_key_is_rejected():
@@ -79,9 +71,7 @@ def test_misspelt_key_is_rejected():
 
 
 def test_every_problem_is_reported_at_once():
-    text = VALID.replace("{ odoo_user: stock@alohas.test }", "{}").replace(
-        "[odoo:stock.quant]", "[stock.quant]"
-    )
+    text = VALID.replace("{ odoo_user: stock@alohas.test }", "{}").replace("[odoo:stock.quant]", "[stock.quant]")
     message = problems(text)
     assert "needs at least one identity" in message
     assert "bad may_write entry" in message

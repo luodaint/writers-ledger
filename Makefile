@@ -1,7 +1,7 @@
 # Offline stack by default. For the live file: make up COMPOSE="docker compose"
 COMPOSE ?= docker compose -f docker-compose.fake.yml
 
-.PHONY: help up down logs test lint loc seed traffic check smoke eval
+.PHONY: help up down logs test lint fmt loc seed traffic check smoke eval
 
 help: ## List the targets
 	@grep -E '^[a-z]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  make %-8s %s\n", $$1, $$2}'
@@ -18,8 +18,13 @@ logs: ## Follow the logs
 test: .venv ## Run the tests
 	.venv/bin/pytest -q
 
-lint: .venv ## Check the code with ruff (the same check as CI)
+lint: .venv ## Check the code with ruff, lint and format (the same check as CI)
 	.venv/bin/ruff check .
+	.venv/bin/ruff format --check .
+
+fmt: .venv ## Fix what ruff can fix, then format the code
+	.venv/bin/ruff check --fix .
+	.venv/bin/ruff format .
 
 loc: ## Count app code lines (non-blank, non-comment Python in app/)
 	@cat app/*.py | grep -cvE '^[[:space:]]*(#|$$)'

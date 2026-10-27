@@ -111,9 +111,7 @@ def test_filter_options_count_only_what_the_other_filters_leave(db):
 def test_activity_counts_writes_per_identity(db):
     ledger.record_write(db, write(written_at="2026-10-26T10:00:00Z"))
     ledger.record_write(db, write(record_ref="8", written_at="2026-10-26T11:00:00Z"))
-    assert ledger.activity(db) == {
-        ("odoo", "stock@alohas.test"): {"writes": 2, "last_seen": "2026-10-26T11:00:00Z"}
-    }
+    assert ledger.activity(db) == {("odoo", "stock@alohas.test"): {"writes": 2, "last_seen": "2026-10-26T11:00:00Z"}}
 
 
 def test_cursor_round_trip(db):
@@ -141,21 +139,38 @@ def test_timestamps_are_normalised_to_utc(value, expected):
     assert ledger.utc(value) == expected
 
 
-@pytest.mark.parametrize("name, stored", [
-    ("stock@alohas.test", "stock@alohas.test"), (None, "unattributed"), ("", "unattributed"),
-    ("unattributed", '"unattributed"'),
-])
+@pytest.mark.parametrize(
+    "name, stored",
+    [
+        ("stock@alohas.test", "stock@alohas.test"),
+        (None, "unattributed"),
+        ("", "unattributed"),
+        ("unattributed", '"unattributed"'),
+    ],
+)
 def test_identity_keeps_the_unattributed_sentinel_for_nobody(name, stored):
     assert ledger.identity(name) == stored
 
 
 # --- findings and checks -------------------------------------------------------------
 
+
 def found(**over):
-    base = {"fingerprint": "unknown_writer|odoo|stock.quant|admin", "rule": "unknown_writer", "severity": "high",
-            "system": "odoo", "model": "stock.quant", "identity": "admin", "writer_id": None, "owner": "",
-            "summary": "admin changed odoo:stock.quant 3 times, but writers.yaml doesn't list it.",
-            "facts": {}, "count": 3, "first_seen": "2026-10-26T10:00:00Z", "last_seen": "2026-10-26T11:00:00Z"}
+    base = {
+        "fingerprint": "unknown_writer|odoo|stock.quant|admin",
+        "rule": "unknown_writer",
+        "severity": "high",
+        "system": "odoo",
+        "model": "stock.quant",
+        "identity": "admin",
+        "writer_id": None,
+        "owner": "",
+        "summary": "admin changed odoo:stock.quant 3 times, but writers.yaml doesn't list it.",
+        "facts": {},
+        "count": 3,
+        "first_seen": "2026-10-26T10:00:00Z",
+        "last_seen": "2026-10-26T11:00:00Z",
+    }
     return base | over
 
 
@@ -179,8 +194,7 @@ def test_count_follows_the_latest_check_and_first_seen_keeps_the_earliest(db):
     later = found(count=5, first_seen="2026-10-26T10:30:00Z", last_seen="2026-10-26T12:00:00Z")
     ledger.save_check(db, [later], "2026-10-27T10:05:00Z")
     [finding] = ledger.list_findings(db)
-    assert (finding["count"], finding["first_seen"], finding["last_seen"]) == (
-        5, "2026-10-26T10:00:00Z", "2026-10-26T12:00:00Z")
+    assert (finding["count"], finding["first_seen"], finding["last_seen"]) == (5, "2026-10-26T10:00:00Z", "2026-10-26T12:00:00Z")
 
 
 def test_a_finding_the_next_check_does_not_find_is_resolved_and_can_reopen(db):
@@ -202,17 +216,21 @@ def test_findings_come_most_recently_seen_first(db):
 def test_a_check_reads_recent_writes_and_every_stock_level(db):
     old = "2026-10-01T10:00:00Z"
     ledger.record_write(db, write(written_at=old))
-    ledger.record_write(db, write(system="shopify", model="inventory_level", record_ref="8", identity="unattributed",
-                                  written_at=old, payload={"sku": "AL01-36", "location": "Milan", "available": 4}))
+    ledger.record_write(
+        db,
+        write(
+            system="shopify", model="inventory_level", record_ref="8", identity="unattributed", written_at=old, payload={"sku": "AL01-36", "location": "Milan", "available": 4}
+        ),
+    )
     ledger.record_write(db, write(model="sale.order", record_ref="9", written_at=old, payload={"name": "S1"}))
     ledger.record_write(db, write(model="sale.order", record_ref="10", payload={"name": "S2"}))
     rows = ledger.writes_to_check(db, "2026-10-20T00:00:00Z", ("stock.quant", "inventory_level"))
-    assert sorted((r["model"], r["record_ref"]) for r in rows) == [
-        ("inventory_level", "8"), ("sale.order", "10"), ("stock.quant", "7")]
+    assert sorted((r["model"], r["record_ref"]) for r in rows) == [("inventory_level", "8"), ("sale.order", "10"), ("stock.quant", "7")]
     assert all(isinstance(r["payload"], dict) for r in rows)
 
 
 # --- triage results and calls ---------------------------------------------------------
+
 
 def test_triage_results_keep_every_key_and_the_latest_usable_answer(db):
     ledger.save_triage(db, "k1", "fp", {"severity": "high"})
