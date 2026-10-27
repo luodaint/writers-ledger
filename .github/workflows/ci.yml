@@ -29,7 +29,7 @@ jobs:
       - run: make lint
       - run: make test
       - name: App code size
-        run: echo "App code in app/ is $(make -s loc) lines (budget about 500-600)." >> "$GITHUB_STEP_SUMMARY"
+        run: echo "App code in app/ is $(make -s loc) lines (budget about 700)." >> "$GITHUB_STEP_SUMMARY"
       - name: The live compose file is valid
         run: docker compose -f docker-compose.yml config --quiet
         env:  # placeholders: the live file refuses to start without them
