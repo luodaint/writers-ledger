@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from app import ledger
 from app.register import RegisterError
+from tests.test_triage import DOWN, EXPLAINED, RATED, Claude
 
 AUTH = ("reviewer", "a-long-test-password")
 # The tests' own register: writers.yaml as shipped. The demo has you edit the real one.
@@ -37,6 +38,7 @@ def start(monkeypatch, **env):
     monkeypatch.setenv("APP_USER", AUTH[0])
     monkeypatch.setenv("APP_PASSWORD", AUTH[1])
     monkeypatch.delenv("ODOO_URL", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)  # tests never call Claude
     for key, value in env.items():
         monkeypatch.setenv(key, value)
     import app.main
@@ -295,3 +297,78 @@ def test_a_broken_register_edit_pauses_checks_and_keeps_the_findings(monkeypatch
     page = TestClient(main.app).get("/", auth=AUTH).text
     assert "writers.yaml has a problem" in page and "half-saved" in page
     assert "stock-cron" in page  # the last good register still shows
+
+
+# --- triage on the page ------------------------------------------------------------------
+
+def findings_section(client):
+    page = client.get("/", auth=AUTH).text
+    return page, page[page.index('id="findings"'):page.index('id="writers"')]
+
+
+def test_without_a_key_triage_is_off_and_cards_keep_the_rule_severity(client, db_path, main):
+    seen(db_path, identity="admin")
+    main.run_check()
+    _, findings = findings_section(client)
+    assert "Triage is off" in findings and "High" in findings
+
+
+def test_triage_explains_raises_and_prices_a_finding(client, db_path, main):
+    seen(db_path, identity="admin")
+    main.run_check()
+    main.CLAUDE = Claude(RATED, EXPLAINED)
+    main.run_triage()
+    page, findings = findings_section(client)
+    assert "Critical" in findings and EXPLAINED["explanation"] in findings
+    assert "Triage is off" not in findings
+    assert "Cost of the last triage run: $0.0042" in page  # Haiku $0.0002 + Sonnet $0.0040
+
+
+def test_each_input_is_triaged_once(db_path, main):
+    seen(db_path, identity="admin")
+    main.run_check()
+    main.CLAUDE = Claude(RATED, EXPLAINED)
+    main.run_triage()
+    main.run_triage()
+    assert len(main.CLAUDE.requests) == 2
+
+
+def test_unattributed_writes_are_never_triaged(db_path, main):
+    seen(db_path, system="shopify", model="inventory_level", identity="unattributed",
+         payload={"sku": "AL01-36", "location": "Milan", "available": 4})
+    main.run_check()
+    main.CLAUDE = Claude()
+    main.run_triage()
+    assert main.CLAUDE.requests == []
+
+
+def test_when_claude_is_unreachable_the_run_stops_and_tries_again_later(db_path, main):
+    seen(db_path, identity="admin")
+    seen(db_path, identity="root", record_ref="8")
+    main.run_check()
+    main.CLAUDE = Claude(DOWN)
+    main.run_triage()
+    assert len(main.CLAUDE.requests) == 1
+    main.CLAUDE = Claude(RATED, EXPLAINED, RATED, EXPLAINED)
+    main.run_triage()
+    assert len(main.CLAUDE.requests) == 4
+
+
+def test_a_hidden_login_is_put_back_only_on_the_page(client, db_path, main):
+    seen(db_path, identity="marta.puig@alohas.com", model="sale.order", payload={"name": "S1"})
+    main.run_check()
+    main.CLAUDE = Claude(RATED | {"category": "unregistered_writer"},
+                         EXPLAINED | {"suggested_fix": "identity: { odoo_user: [login] }"})
+    main.run_triage()
+    _, findings = findings_section(client)
+    assert "odoo_user: marta.puig@alohas.com" in findings
+
+
+def test_the_page_never_shows_a_finding_below_its_rule_severity(client, db_path, main):
+    seen(db_path, identity="admin")
+    main.run_check()
+    main.CLAUDE = Claude(RATED | {"severity": "low"}, EXPLAINED)
+    main.run_triage()
+    _, findings = findings_section(client)
+    assert '<span class="badge red">High</span>' in findings
+    assert "Claude's rating" in findings and "low, credential misuse" in findings

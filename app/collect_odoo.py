@@ -79,15 +79,13 @@ def to_write(model: str, record: dict, resolve) -> dict:
     }
 
 
-def poll_model(http, conn, model: str, cache: dict) -> int:
+def poll_model(http, conn, model: str, cache: dict, start: str) -> int:
     name = f"odoo:{model}"
     cursor = ledger.get_cursor(conn, name)
-    if cursor is None:  # first poll: observe from the next second on, not the seed data
-        latest = call(http, model, "search_read", domain=DOMAINS.get(model, []), fields=["write_date"], order="write_date desc", limit=1)
-        start = datetime.fromisoformat(latest[0]["write_date"]) + timedelta(seconds=1) if latest else datetime(1970, 1, 1)
-        ledger.set_cursor(conn, name, start.strftime(TIME))
-        ledger.set_cursor(conn, name + ":since", start.strftime(TIME))
-        return 0
+    if cursor is None:  # first poll: from where the seed ended, never the seed's own writes
+        cursor = start
+        ledger.set_cursor(conn, name, start)
+        ledger.set_cursor(conn, name + ":since", start)
     # Re-read an overlap: a long transaction can commit after we polled past its write_date.
     # Never before the first poll, though. The ledger's dedupe drops what it already has.
     overlap = (datetime.fromisoformat(cursor) - timedelta(seconds=OVERLAP)).strftime(TIME)
@@ -107,14 +105,14 @@ def poll_model(http, conn, model: str, cache: dict) -> int:
     return new
 
 
-def poll_all(http, conn, cache: dict) -> int:
+def poll_all(http, conn, cache: dict, start: str) -> int:
     if writable := [m for m in MODELS if call(http, m, "has_access", operation="write")]:
         log.error("Refusing to poll: the collector's Odoo key can write to %s. It must be read-only.", writable)
         return 0
     new = 0
     for model in MODELS:  # one model failing (say, access revoked) must not blind the others
         try:
-            new += poll_model(http, conn, model, cache)
+            new += poll_model(http, conn, model, cache, start)
         except httpx.HTTPStatusError as e:
             log.warning("Odoo poll of %s failed: %s", model, e.response.status_code)
     return new
@@ -123,13 +121,14 @@ def poll_all(http, conn, cache: dict) -> int:
 def poll_once(conn, cache: dict, **kwargs) -> int:
     try:
         with open(KEYS_FILE) as f:
-            key = json.load(f)["ledger"]["key"]
+            keys = json.load(f)
+        key, start = keys["ledger"]["key"], keys["since"]  # since: when the seed ended, where observing starts
     except (OSError, ValueError, KeyError):
-        log.info("No Odoo key for the collector yet: run `make seed`.")
+        log.info("No Odoo key from a current seed for the collector yet: run `make seed`.")
         return 0
     try:
         with client(URL, DB, key, **kwargs) as http:
-            return poll_all(http, conn, cache)
+            return poll_all(http, conn, cache, start)
     except Exception as e:  # noqa: BLE001 - the ledger page must keep working while Odoo is down
         log.warning("Odoo poll failed: %s: %s", type(e).__name__, e)
         return 0

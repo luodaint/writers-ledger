@@ -175,3 +175,5 @@ tr.unattributed td { background: var(--amber-soft); }
 .resolved ul { margin: 8px 0 0; padding-left: 20px; }
 .resolved li { margin-bottom: 4px; }
 .resolved li strong { color: var(--text); white-space: normal; }
+.finding .fix pre { margin: 6px 0 0; padding: 8px 10px; background: var(--code); border-radius: 6px;
+  white-space: pre-wrap; color: var(--text); font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; }

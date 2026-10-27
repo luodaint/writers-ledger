@@ -118,7 +118,8 @@ users["admin"] = env.ref("base.user_admin")
 keys = {role: {"login": user.login, "key": rotate_key(role, user)} for role, user in users.items()}
 env.cr.commit()
 env.registry.signal_changes()  # tell the running Odoo server its access caches are stale
-write_keys(COLLECTOR_FILE, {"ledger": keys.pop("ledger")})
+seeded = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d %H:%M:%S")  # Odoo's write_date format
+write_keys(COLLECTOR_FILE, {"ledger": keys.pop("ledger"), "since": seeded})  # the collector starts here
 write_keys(WRITERS_FILE, keys)
 print(f"Seeded Odoo: {len(catalog.variants())} variants, {quants} new stock lines. "
       f"Collector key in {COLLECTOR_FILE}; keys for {', '.join(keys)} in {WRITERS_FILE}.")

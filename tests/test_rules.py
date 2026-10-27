@@ -192,3 +192,9 @@ def test_open_findings_come_first_then_the_most_severe():
         ("a", "open", "medium"), ("b", "resolved", "critical"), ("c", "open", "info"), ("d", "open", "high"),
         ("e", "open", "high")]]
     assert [f["fingerprint"] for f in rules.rank(findings)] == ["d", "e", "a", "c", "b"]  # ties keep their order
+
+
+def test_the_rule_severity_is_a_floor_others_may_only_raise():
+    assert rules.raised("high", "critical") == "critical"
+    assert rules.raised("high", "low") == "high"
+    assert rules.raised("medium", "medium") == "medium"

@@ -180,3 +180,22 @@ def test_a_check_reads_recent_writes_and_every_stock_level(db):
     assert sorted((r["model"], r["record_ref"]) for r in rows) == [
         ("inventory_level", "8"), ("sale.order", "10"), ("stock.quant", "7")]
     assert all(isinstance(r["payload"], dict) for r in rows)
+
+
+# --- triage results and calls ---------------------------------------------------------
+
+def test_triage_results_keep_every_key_and_the_latest_usable_answer(db):
+    ledger.save_triage(db, "k1", "fp", {"severity": "high"})
+    ledger.save_triage(db, "k2", "fp", {"severity": "critical"})
+    ledger.save_triage(db, "k3", "fp", {})  # declined: remembered, so it isn't asked again
+    assert ledger.triaged_keys(db) == {"k1", "k2", "k3"}
+    assert ledger.latest_triage(db) == {"fp": {"severity": "critical"}}
+
+
+def test_the_cost_shown_is_the_last_run_that_called_claude(db):
+    assert ledger.last_run_cost(db) is None
+    call = {"model": "claude-haiku-5-5", "input_tokens": 1000, "output_tokens": 200, "cost_usd": 0.0002}
+    ledger.save_calls(db, "2026-10-27T10:00:00Z", "fp1", [call, call | {"cost_usd": 0.004}])
+    ledger.save_calls(db, "2026-10-27T10:05:00Z", "fp2", [call])
+    ledger.save_calls(db, "2026-10-27T10:05:00Z", "fp3", [call | {"cost_usd": None}])  # a model we can't price
+    assert ledger.last_run_cost(db) == pytest.approx(0.0002)
