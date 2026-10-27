@@ -13,9 +13,9 @@
 - Dependencies: runtime `fastapi`, `uvicorn`, `jinja2`, `httpx`, `pyyaml`,
   `anthropic`; dev `pytest`, `ruff`. Ask the owner before adding anything else. Pin exact
   versions.
-- Size budget: at most 500 lines of app code in `app/` (excluding templates,
-  `sim/`, `evals/`, `tests/`). `make loc` reports it; report the count at the end
-  of each phase.
+- Size budget: about 700 lines of app code in `app/`, raised from the brief's 500
+  with the owner. Templates, `app/triage.yaml`, `sim/`, `evals/` and `tests/` don't
+  count. `make loc` reports it; report the count at the end of each phase.
 
 ## Domain language (DDD)
 

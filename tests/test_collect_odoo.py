@@ -8,6 +8,7 @@ from app import collect_odoo, ledger
 USERS = {2: "admin", 6: "stock@alohas.test"}
 PRODUCTS = {11: "AL01-36"}
 LOCATIONS = {3: "Milan"}
+START = "2026-10-26 09:00:01"  # where `make seed` ended: what came before is seed data
 
 
 class FakeOdoo:
@@ -82,20 +83,42 @@ def test_only_allowlisted_fields_reach_the_ledger():
     assert payload == {"name": "S00001", "state": "draft", "amount_total": 120.0}
 
 
-def test_first_poll_starts_from_now_and_ignores_history(db):
-    odoo = FakeOdoo({"stock.quant": [quant(written="2026-10-26 09:00:00")]})
-    assert collect_odoo.poll_model(http_for(odoo), db, "stock.quant", {}) == 0
-    # one second past history, so the >= of the next poll can't pick the last seed write up again
-    assert ledger.get_cursor(db, "odoo:stock.quant") == "2026-10-26 09:00:01"
-    assert ledger.latest_writes(db) == []
+def test_first_poll_starts_where_the_seed_ended(db):
+    odoo = FakeOdoo({"stock.quant": [quant(written="2026-10-26 09:00:00"), quant(id=8, uid=2, written="2026-10-26 09:00:07")]})
+    assert collect_odoo.poll_model(http_for(odoo), db, "stock.quant", {}, START) == 1
+    assert [r["record_ref"] for r in ledger.latest_writes(db)] == ["8"]
+    assert ledger.get_cursor(db, "odoo:stock.quant:since") == START
+
+
+def test_a_key_file_from_an_older_seed_waits_for_make_seed(db, tmp_path, monkeypatch, caplog):
+    caplog.set_level("INFO")
+    keys = tmp_path / "keys.json"
+    keys.write_text(json.dumps({"ledger": {"login": "ledger@alohas.test", "key": "k"}}))  # no "since"
+    monkeypatch.setattr(collect_odoo, "KEYS_FILE", str(keys))
+    assert collect_odoo.poll_once(db, {}) == 0
+    assert "make seed" in caplog.text
+
+
+def test_writes_between_the_seed_and_the_first_poll_are_not_missed(db, tmp_path, monkeypatch):
+    """Regression: the first poll used to start from its own moment, so traffic played right after
+    `make seed`, before that poll, was never recorded (found in an end-to-end run)."""
+    keys = tmp_path / "keys.json"
+    keys.write_text(json.dumps({"ledger": {"login": "ledger@alohas.test", "key": "k"}, "since": "2026-10-26 09:00:05"}))
+    monkeypatch.setattr(collect_odoo, "KEYS_FILE", str(keys))
+    monkeypatch.setattr(collect_odoo, "URL", "http://odoo")
+    seed, traffic = quant(written="2026-10-26 09:00:00"), quant(id=8, uid=2, written="2026-10-26 09:00:07")
+    odoo = FakeOdoo({"stock.quant": [seed, traffic]})
+    assert collect_odoo.poll_once(db, {}, transport=httpx.MockTransport(odoo)) == 1
+    [row] = ledger.latest_writes(db)
+    assert (row["record_ref"], row["identity"]) == ("8", "admin")
 
 
 def test_next_poll_records_new_writes_and_moves_the_cursor(db):
     odoo = FakeOdoo({"stock.quant": [quant(written="2026-10-26 09:00:00")]})
     http = http_for(odoo)
-    collect_odoo.poll_model(http, db, "stock.quant", {})
+    collect_odoo.poll_model(http, db, "stock.quant", {}, START)
     odoo.records["stock.quant"].append(quant(id=8, uid=2, written="2026-10-26 10:00:00"))
-    assert collect_odoo.poll_model(http, db, "stock.quant", {}) == 1
+    assert collect_odoo.poll_model(http, db, "stock.quant", {}, START) == 1
     [row] = ledger.latest_writes(db)
     assert (row["record_ref"], row["identity"]) == ("8", "admin")
     assert ledger.get_cursor(db, "odoo:stock.quant") == "2026-10-26 10:00:00"
@@ -104,11 +127,11 @@ def test_next_poll_records_new_writes_and_moves_the_cursor(db):
 def test_overlapping_polls_never_duplicate(db):
     odoo = FakeOdoo({"stock.quant": []})
     http = http_for(odoo)
-    collect_odoo.poll_model(http, db, "stock.quant", {})
+    collect_odoo.poll_model(http, db, "stock.quant", {}, START)
     odoo.records["stock.quant"].append(quant(written="2026-10-26 10:00:00"))
-    collect_odoo.poll_model(http, db, "stock.quant", {})
+    collect_odoo.poll_model(http, db, "stock.quant", {}, START)
     odoo.records["stock.quant"].append(quant(id=9, written="2026-10-26 10:00:00"))
-    assert collect_odoo.poll_model(http, db, "stock.quant", {}) == 1
+    assert collect_odoo.poll_model(http, db, "stock.quant", {}, START) == 1
     assert len(ledger.latest_writes(db)) == 2
 
 
@@ -116,9 +139,9 @@ def test_logins_are_looked_up_once(db):
     odoo = FakeOdoo({"stock.quant": []})
     http = http_for(odoo)
     cache = {}
-    collect_odoo.poll_model(http, db, "stock.quant", cache)
+    collect_odoo.poll_model(http, db, "stock.quant", cache, START)
     odoo.records["stock.quant"] += [quant(id=i, written=f"2026-10-26 10:0{i}:00") for i in range(3)]
-    collect_odoo.poll_model(http, db, "stock.quant", cache)
+    collect_odoo.poll_model(http, db, "stock.quant", cache, START)
     user_reads = [c for c in odoo.calls if c[:2] == ("res.users", "read")]
     assert len(user_reads) == 1
 
@@ -134,14 +157,15 @@ def test_requests_carry_key_and_database():
 
 def test_refuses_to_poll_with_a_key_that_can_write(db, caplog):
     odoo = FakeOdoo({"stock.quant": [quant()]}, writable={"stock.quant"})
-    assert collect_odoo.poll_all(http_for(odoo), db, {}) == 0
+    assert collect_odoo.poll_all(http_for(odoo), db, {}, START) == 0
     assert not [c for c in odoo.calls if c[1] == "search_read"]
     assert "can write to ['stock.quant']" in caplog.text
 
 
 def test_odoo_being_down_does_not_crash_the_collector(db, tmp_path, monkeypatch, caplog):
     keys = tmp_path / "keys.json"
-    keys.write_text(json.dumps({"ledger": {"login": "ledger@alohas.test", "key": "super-secret-key-123"}}))
+    keys.write_text(json.dumps({"ledger": {"login": "ledger@alohas.test", "key": "super-secret-key-123"},
+                                "since": START}))
     monkeypatch.setattr(collect_odoo, "KEYS_FILE", str(keys))
 
     def down(request):
@@ -162,8 +186,8 @@ def test_without_keys_the_collector_waits_for_the_seed(db, tmp_path, monkeypatch
 def test_only_quants_in_real_locations_are_watched(db):
     odoo = FakeOdoo({"stock.quant": []})
     http = http_for(odoo)
-    collect_odoo.poll_model(http, db, "stock.quant", {})
-    collect_odoo.poll_model(http, db, "stock.quant", {})
+    collect_odoo.poll_model(http, db, "stock.quant", {}, START)
+    collect_odoo.poll_model(http, db, "stock.quant", {}, START)
     domains = [c[2]["domain"] for c in odoo.calls if c[1] == "search_read"]
     assert all(["location_id.usage", "=", "internal"] in d for d in domains)
 
@@ -173,11 +197,11 @@ def test_a_bulk_write_bigger_than_a_page_cannot_blind_the_collector(db, monkeypa
     monkeypatch.setattr(collect_odoo, "PAGE", 2)
     odoo = FakeOdoo({"stock.quant": []})
     http = http_for(odoo)
-    collect_odoo.poll_model(http, db, "stock.quant", {})
+    collect_odoo.poll_model(http, db, "stock.quant", {}, START)
     odoo.records["stock.quant"] += [quant(id=i, uid=2, written="2026-10-26 10:00:00") for i in range(5)]
-    collect_odoo.poll_model(http, db, "stock.quant", {})
+    collect_odoo.poll_model(http, db, "stock.quant", {}, START)
     odoo.records["stock.quant"].append(quant(id=99, written="2026-10-26 10:00:07"))
-    collect_odoo.poll_model(http, db, "stock.quant", {})
+    collect_odoo.poll_model(http, db, "stock.quant", {}, START)
     assert len(ledger.latest_writes(db)) == 6
     assert ledger.get_cursor(db, "odoo:stock.quant") == "2026-10-26 10:00:07"
 
@@ -186,11 +210,11 @@ def test_a_write_committed_late_is_still_seen(db):
     """Odoo stamps write_date when a transaction starts; a long one can commit after we polled past it."""
     odoo = FakeOdoo({"stock.quant": []})
     http = http_for(odoo)
-    collect_odoo.poll_model(http, db, "stock.quant", {})
+    collect_odoo.poll_model(http, db, "stock.quant", {}, START)
     odoo.records["stock.quant"].append(quant(id=1, written="2026-10-26 10:00:10"))
-    collect_odoo.poll_model(http, db, "stock.quant", {})
+    collect_odoo.poll_model(http, db, "stock.quant", {}, START)
     odoo.records["stock.quant"].append(quant(id=2, uid=2, written="2026-10-26 10:00:05"))  # committed late
-    assert collect_odoo.poll_model(http, db, "stock.quant", {}) == 1
+    assert collect_odoo.poll_model(http, db, "stock.quant", {}, START) == 1
     assert {r["record_ref"] for r in ledger.latest_writes(db)} == {"1", "2"}
 
 
@@ -203,9 +227,9 @@ def test_a_user_named_like_the_sentinel_is_not_mistaken_for_unattributed():
 def test_a_writer_we_cannot_read_is_recorded_as_unknown_instead_of_stalling(db):
     odoo = FakeOdoo({"stock.quant": []}, forbidden={("res.users", 13)})
     http = http_for(odoo)
-    collect_odoo.poll_model(http, db, "stock.quant", {})
+    collect_odoo.poll_model(http, db, "stock.quant", {}, START)
     odoo.records["stock.quant"].append(quant(uid=13, written="2026-10-26 10:00:00"))
-    assert collect_odoo.poll_model(http, db, "stock.quant", {}) == 1
+    assert collect_odoo.poll_model(http, db, "stock.quant", {}, START) == 1
     assert ledger.latest_writes(db)[0]["identity"] == "res.users#13"
     assert ledger.get_cursor(db, "odoo:stock.quant") == "2026-10-26 10:00:00"
 
@@ -213,7 +237,7 @@ def test_a_writer_we_cannot_read_is_recorded_as_unknown_instead_of_stalling(db):
 def test_one_failing_model_does_not_stop_the_others(db, caplog):
     odoo = FakeOdoo({"stock.quant": []}, forbidden={("stock.picking", "search_read")})
     http = http_for(odoo)
-    collect_odoo.poll_all(http, db, {})
+    collect_odoo.poll_all(http, db, {}, START)
     odoo.records["stock.quant"].append(quant(written="2026-10-26 10:00:00"))
-    assert collect_odoo.poll_all(http, db, {}) == 1
+    assert collect_odoo.poll_all(http, db, {}, START) == 1
     assert "stock.picking" in caplog.text

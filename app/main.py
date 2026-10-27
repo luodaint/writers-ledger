@@ -1,4 +1,4 @@
-"""The web app: one page behind basic auth, a public health check, the collectors and the checks."""
+"""The web app: one page behind basic auth, a public health check, the collectors, checks and triage."""
 import logging
 import os
 import pathlib
@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse, PlainTextResponse, RedirectResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.templating import Jinja2Templates
 
-from app import collect_odoo, collect_shopify, ledger, rules
+from app import collect_odoo, collect_shopify, ledger, rules, triage
 from app.register import UNATTRIBUTED, load_register, writer_for
 
 HERE = pathlib.Path(__file__).parent
@@ -32,6 +32,8 @@ LEDGER_DB = os.environ.get("LEDGER_DB", "ledger.db")
 WINDOW = timedelta(days=7)  # writer rules count a week of writes, so a writer that stopped resolves
 SETTLE = timedelta(minutes=int(os.environ.get("DRIFT_SETTLE_MINUTES", "10")))
 CHECK_LOCK = threading.Lock()
+CLAUDE = triage.client()  # None without ANTHROPIC_API_KEY: triage is off
+ODOO_CACHE = {}  # logins, SKUs and locations already looked up
 
 SECURITY_HEADERS = {
     "Content-Security-Policy": "default-src 'none'; style-src 'self'; img-src 'self'; "
@@ -70,6 +72,12 @@ def writer_rows(writers, activity: dict) -> tuple[list, list]:
     return unknown, rows
 
 
+def with_triage(findings: list[dict], results: dict) -> list[dict]:
+    """Each finding with its latest triage, shown at the higher of the rule's and Claude's severity."""
+    return [f | {"triage": t, "severity": rules.raised(f["severity"], t["severity"]) if t else f["severity"]}
+            for f in findings for t in [results.get(f["fingerprint"])]]
+
+
 def reload_register() -> tuple[list, str | None]:
     """Re-read writers.yaml, so an edit applies without a restart: the writers, and the problem if it's broken."""
     global register
@@ -95,22 +103,42 @@ def run_check() -> int | None:
     return len(found)
 
 
-def work(stop: threading.Event) -> None:
-    """Every POLL_SECONDS: read Odoo, then check. Shopify writes arrive by webhook meanwhile."""
-    conn, cache = ledger.connect(LEDGER_DB), {}
+def run_triage() -> None:
+    """Triage the open findings whose input changed since their last triage, PER_RUN at a time."""
+    writers, _ = reload_register()
+    with closing(ledger.connect(LEDGER_DB)) as conn:
+        done, run = ledger.triaged_keys(conn), ledger.now()
+        todo = [(f, *triage.prepare(f, writers)) for f in ledger.list_findings(conn)
+                if f["status"] == "open" and f["severity"] != "info"]  # unattributed writes stay a note
+        for f, payload, key in [(f, p, k) for f, p, k in todo if k not in done][:triage.PER_RUN]:
+            result, calls = triage.triage(CLAUDE, payload)
+            ledger.save_calls(conn, run, f["fingerprint"], calls)
+            if result is None:  # Claude unreachable: the rest waits for the next run
+                return
+            ledger.save_triage(conn, key, f["fingerprint"], result)
+
+
+def poll_and_check() -> None:
+    """Read Odoo, then check. Shopify writes arrive by webhook meanwhile."""
+    if collect_odoo.URL:
+        with closing(ledger.connect(LEDGER_DB)) as conn:
+            collect_odoo.poll_once(conn, ODOO_CACHE)
+    run_check()
+
+
+def every_poll(job, stop: threading.Event) -> None:
     while not stop.wait(collect_odoo.POLL_SECONDS):
-        if collect_odoo.URL:
-            collect_odoo.poll_once(conn, cache)
         try:
-            run_check()
-        except Exception:  # one failed check must not stop the next ones
-            log.exception("Check failed")
+            job()
+        except Exception:  # one failed run must not stop the next ones
+            log.exception("%s failed", job.__name__)
 
 
 @asynccontextmanager
 async def lifespan(_app):
     stop = threading.Event()
-    threading.Thread(target=work, args=(stop,), daemon=True).start()
+    for job in [poll_and_check] + ([run_triage] if CLAUDE else []):  # triage in its own thread: Claude is slow
+        threading.Thread(target=every_poll, args=(job, stop), daemon=True).start()
     yield
     stop.set()
 
@@ -142,8 +170,9 @@ def index(request: Request, system: str = "", model: str = "", identity: str = "
         unknown, rows = writer_rows(writers, ledger.activity(conn))
         context = {"unknown": unknown, "writers": rows, "filters": filters, "loc": LOC,
                    "writes": ledger.latest_writes(conn, **filters), "options": ledger.filter_options(conn),
-                   "findings": rules.rank(ledger.list_findings(conn)),
-                   "last_check": ledger.get_cursor(conn, "check:last"), "register_error": problem}
+                   "findings": rules.rank(with_triage(ledger.list_findings(conn), ledger.latest_triage(conn))),
+                   "last_check": ledger.get_cursor(conn, "check:last"), "register_error": problem,
+                   "triage_on": CLAUDE is not None, "cost": ledger.last_run_cost(conn)}
     context["unregistered"] = {(u["system"], u["identity"]) for u in unknown if u["identity"] != UNATTRIBUTED}
     return templates.TemplateResponse(request, "index.html", context)
 

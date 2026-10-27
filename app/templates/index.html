@@ -41,19 +41,28 @@
       <pre>{{ register_error }}</pre>
     </div>
     {% endif %}
-    {% for f in cards %}{% set tone = "red" if f.severity in ("critical", "high") else "amber" %}
+    {% if not triage_on %}<p class="note">Triage is off: set <code>ANTHROPIC_API_KEY</code> to have Claude rate and explain each finding.</p>{% endif %}
+    {% for f in cards %}{% set tone = "red" if f.severity in ("critical", "high") else "amber" %}{% set t = f.triage %}
     <article class="finding {{ tone }}">
       <div class="finding-head">
         <span class="badge {{ tone }}">{{ f.severity | capitalize }}</span>
         <h3>{{ titles[f.rule] }}</h3>
       </div>
       <p>{{ f.summary }}</p>
+      {% if t %}<p><strong>Claude:</strong> {{ (t.explanation or t.likely_cause) | replace("[login]", f.identity) }}</p>{% endif %}
+      {% if t.suggested_fix %}
+      <div class="fix"><strong>Suggested fix, written by Claude.</strong> Check it before you paste it.<pre>{{ t.suggested_fix | replace("[login]", f.identity) }}</pre></div>
+      {% else %}
       <p class="fix"><strong>Suggested fix:</strong> {{ fixes[f.rule] }}</p>
+      {% endif %}
+      {% if t.who_to_ask %}<p class="fix"><strong>Who to ask:</strong> {{ t.who_to_ask | replace("[login]", f.identity) }}</p>{% endif %}
       <dl>
         <div><dt>Owner</dt><dd>{{ f.owner or "nobody" }}{% if f.writer_id %} ({{ f.writer_id }}){% endif %}</dd></div>
         {% if f.rule != "stock_drift" %}<div><dt>Writes</dt><dd>{{ f.count }}</dd></div>{% endif %}
         <div><dt>First seen</dt><dd>{{ when(f.first_seen) }}</dd></div>
         <div><dt>Last seen</dt><dd>{{ when(f.last_seen) }}</dd></div>
+        {% if t %}<div><dt>Claude's rating</dt><dd>{{ t.severity }}, {{ t.category | replace("_", " ") }}, {{ (t.confidence * 100) | round | int }}% sure</dd></div>
+        {% elif triage_on %}<div><dt>Claude's rating</dt><dd class="muted">coming in a few seconds</dd></div>{% endif %}
       </dl>
     </article>
     {% else %}
@@ -168,7 +177,7 @@
   </section>
 </main>
 <footer>
-  Last check: {{ when(last_check) }} · Cost of last check: — · {{ loc }} lines of app code
+  Last check: {{ when(last_check) }} · Cost of the last triage run: {% if cost is not none %}${{ "%.4f" | format(cost) }}{% else %}—{% endif %} · {{ loc }} lines of app code
 </footer>
 </body>
 </html>

@@ -1,7 +1,7 @@
 # Offline stack by default. For the live file: make up COMPOSE="docker compose"
 COMPOSE ?= docker compose -f docker-compose.fake.yml
 
-.PHONY: help up down logs test lint loc seed traffic check smoke
+.PHONY: help up down logs test lint loc seed traffic check smoke eval
 
 help: ## List the targets
 	@grep -E '^[a-z]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  make %-8s %s\n", $$1, $$2}'
@@ -40,3 +40,6 @@ check: ## Run a check now: the rules over the ledger and writers.yaml
 
 smoke: ## Check the running offline demo end to end (what CI runs after seed and traffic)
 	$(COMPOSE) exec -T app python -m sim.smoke
+
+eval: .venv ## Score Claude's triage on evals/cases.yaml (reads ANTHROPIC_API_KEY from .env; costs cents)
+	@set -a; [ ! -f .env ] || . ./.env; set +a; .venv/bin/python -m evals.run

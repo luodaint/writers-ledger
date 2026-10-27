@@ -79,6 +79,9 @@ services:
       ODOO_DB: ${ODOO_DB:-writers}
       POLL_SECONDS: ${POLL_SECONDS:-30}
       DRIFT_SETTLE_MINUTES: ${DRIFT_SETTLE_MINUTES:-10}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}  # empty: triage is off, findings keep their rule severity
+      TRIAGE_MODEL_SMALL: ${TRIAGE_MODEL_SMALL:-claude-haiku-5-5}
+      TRIAGE_MODEL_LARGE: ${TRIAGE_MODEL_LARGE:-claude-sonnet-5-5}
       LEDGER_DB: /data/ledger.db
       # The observer app in your dev store. Without them, webhooks are refused (401).
       SHOPIFY_STORE: ${SHOPIFY_STORE:-}

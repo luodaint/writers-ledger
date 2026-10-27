@@ -26,9 +26,11 @@ CREATE TABLE IF NOT EXISTS findings (
     fingerprint TEXT PRIMARY KEY, rule TEXT NOT NULL, severity TEXT NOT NULL,
     system TEXT NOT NULL, model TEXT NOT NULL, identity TEXT NOT NULL, writer_id TEXT, owner TEXT NOT NULL,
     summary TEXT NOT NULL, facts TEXT NOT NULL, count INTEGER NOT NULL,
-    first_seen TEXT NOT NULL, last_seen TEXT NOT NULL, status TEXT NOT NULL, resolved_at TEXT,
-    explanation TEXT, suggested_fix TEXT  -- written by the LLM triage (Phase 3)
+    first_seen TEXT NOT NULL, last_seen TEXT NOT NULL, status TEXT NOT NULL, resolved_at TEXT
 );
+CREATE TABLE IF NOT EXISTS triage (key TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, result TEXT NOT NULL, at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS calls (run TEXT NOT NULL, fingerprint TEXT NOT NULL, model TEXT NOT NULL,
+    input_tokens INTEGER NOT NULL, output_tokens INTEGER NOT NULL, cost_usd REAL);
 """
 FINDING = ("fingerprint", "rule", "severity", "system", "model", "identity", "writer_id", "owner", "summary",
            "facts", "count", "first_seen", "last_seen")
@@ -136,3 +138,31 @@ def list_findings(conn) -> list[dict]:
     """Every finding, the most recently seen first."""
     rows = conn.execute("SELECT * FROM findings ORDER BY last_seen DESC")
     return [dict(r) | {"facts": json.loads(r["facts"])} for r in rows]
+
+
+def save_triage(conn, key: str, fingerprint: str, result: dict) -> None:
+    with conn:
+        conn.execute("INSERT OR REPLACE INTO triage VALUES (?, ?, ?, ?)",
+                     (key, fingerprint, json.dumps(result, sort_keys=True), now()))
+
+
+def triaged_keys(conn) -> set[str]:
+    return {key for (key,) in conn.execute("SELECT key FROM triage")}
+
+
+def latest_triage(conn) -> dict[str, dict]:
+    """The latest usable answer per fingerprint: one Claude declined ({}) never hides an earlier answer."""
+    rows = conn.execute("SELECT fingerprint, result FROM triage WHERE result != '{}' ORDER BY at, rowid")
+    return {fingerprint: json.loads(result) for fingerprint, result in rows}
+
+
+def save_calls(conn, run: str, fingerprint: str, calls: list[dict]) -> None:
+    """Log the tokens and cost of every call to Claude (never the prompt or the answer)."""
+    with conn:
+        conn.executemany("INSERT INTO calls VALUES (:run, :fingerprint, :model, :input_tokens, :output_tokens, :cost_usd)",
+                         [c | {"run": run, "fingerprint": fingerprint} for c in calls])
+
+
+def last_run_cost(conn) -> float | None:
+    """Dollars spent by the last triage run that called Claude."""
+    return conn.execute("SELECT sum(cost_usd) FROM calls WHERE run = (SELECT max(run) FROM calls)").fetchone()[0]

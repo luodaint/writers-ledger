@@ -74,3 +74,8 @@ def check(writes: list[dict], writers: list[Writer], since: str, settled: str) -
 def rank(findings: list[dict]) -> list[dict]:
     """Open findings first, then the most severe; otherwise the order is kept."""
     return sorted(findings, key=lambda f: (f["status"] == "resolved", SEVERITIES.index(f["severity"])))
+
+
+def raised(floor: str, severity: str) -> str:
+    """The more severe of the two: a rule's severity is a floor that triage may raise, never lower."""
+    return min(floor, severity, key=SEVERITIES.index)

@@ -45,3 +45,35 @@ where it got it wrong, what I changed by hand.
 - **Done:** `rules.py` is pure and was written tests first (21 tests). A finding is stored per fingerprint; its count is recomputed by each check and never summed, and a check that no longer finds it resolves it. Checks run after every Odoo poll, on a "Run check now" button and with `make check`. Each check re-reads `writers.yaml`, and a broken edit pauses checks instead of resolving everything. `sim/traffic.py` plants the four incidents, and `make smoke` (in CI) requires exactly those four.
 - **Got wrong:** summaries said "1 times". A drift test fed writes oldest-first, so removing the sort went unnoticed; mutation testing caught it. `Referrer-Policy: no-referrer` makes Chrome send `Origin: null` on form posts, so the button was refused in a real browser while the unit tests passed. Tests read the repo's `writers.yaml`, so following the README demo would have broken `make test`; the `/simplify` review caught it. App code is 617 lines against a ~560 estimate.
 - **Changed by hand:** nothing.
+
+## Phase 3: triage and evals
+
+- **Asked:** redaction, two-tier triage (`claude-haiku-5-5` rates every finding, `claude-sonnet-5-5` explains the high and critical ones), the cost in the footer, evals. Owner's decisions: about 700 lines of app code, and triage in the background so "Run check now" stays fast.
+- **Done:**
+  - `redact.py` written tests first.
+  - `triage.py` tested against a stub client that records every request: no email or phone pattern may appear in anything sent.
+  - The rule's severity is a floor. Email-shaped logins go to the model as `[login]`.
+  - Results are cached by the exact input. Triage runs in its own thread. Sonnet's declined requests fall back server-side (`fallbacks: "default"`).
+  - `make eval`: 15 cases scoring Claude's own rating. A run costs $0.059; the first full triage of the demo was 7 calls, $0.0143.
+- **The evals caught:**
+  - **First run, 13/14.** An unknown `temp-import` script changing stock 30 times came back high instead of critical, 1 time in 3; Claude read the name as a harmless one-off.
+  - **After a first fix, 13/14 again.** The rubric gained "however harmless its name sounds" and named the models. Stock then passed, but an unknown app creating Shopify orders 7 times fell to high, 3 times in 3. A control run showed the same with a neutral name: the rubric didn't map `shopify:order` to "orders", and the injection text played no part.
+  - **Final fix, 14/14.** Naming the six exact `what_changed` values fixed both. The neutral-name control is now a permanent case: 15 in all.
+- **Got wrong:**
+  - **The API key went into the public `.env.example`, not `.env`.** It was moved before any commit, and a test now fails on any value there. A search printed the key once in this session, so it should be rotated.
+  - **The collector's first poll started from its own moment.** Traffic played straight after `make seed` was never recorded, a race present since Phase 1 that an end-to-end run hit. The seed now writes when it ended, and the collector starts there.
+  - **A test checked for `[login]` anywhere in the request,** which the system prompt already contained; mutation testing caught it.
+  - **App code is 779 lines against the ~705 estimate.** `triage.py` came out about 30 lines longer than planned.
+  - **While undoing a deliberate mutation, I ran `git checkout -- app/main.py`.** It threw away the file's uncommitted Phase 3 work. I restored it from the diff saved for the `/simplify` review, re-applied the later edits, and checked the line count matched. Mutations are now undone only from a backup copy.
+- **`/simplify` (four parallel reviews) changed:**
+  - **The cache key.** It included the exact drift quantities, so a stock-sync outage would have paid for a triage on every sale, up to about $11 an hour. It also left out the prompts and models, so a prompt change never re-triaged anything. It is now fingerprint, a count bucket (below or at 5), the register entry, the prompts and the models.
+  - **Refused requests.** A request Claude rejects (400 or 404) is final for that input; before, it was retried and paid for on every poll.
+  - **One severity floor.** Claude's rating is stored as given, and the floor is applied once, on the page.
+  - **`make eval`** scores only the rating, so a run costs $0.0027 instead of $0.059.
+  - **The collector** requires the seed's end mark.
+  - **Skipped:** the efficiency, reuse and altitude reviews' remaining ideas are listed in the PR. App code is 776 lines.
+- **Automated security review after the push** (valid):
+  - **The finding:** a Shopify app name or Odoo login is chosen by whoever writes, so prompt injection could steer Claude's "ready-to-paste" `writers.yaml` entry into granting more access.
+  - **The fix:** before an entry is shown, code checks that every scope in it is the one changed or one the writer already has, and every identity is the writer's own. Otherwise the card falls back to the rule's advice. The card now labels Claude's text, so the fix is checked before pasting.
+  - **Cost:** 13 lines, which takes app code to 789.
+- **Changed by hand:** nothing.
