@@ -17,6 +17,10 @@ Know these before you trust a count.
   ledger drops what it already has. A writer or product it isn't allowed to read is
   recorded by id (`res.users#13`, so an unknown writer) instead of stopping the
   poll, and one model failing doesn't stop the others.
+- **A record seen twice in the same second keeps its latest state.** A stock count
+  is two requests, set then apply, often within one second. A poll between them sees
+  the old quantity; the re-read after the apply replaces it, so the ledger never
+  keeps a quantity Odoo has already moved past.
 - **A price change counts six times.** Odoo keeps a shoe's price on the shoe, so
   changing it updates all six of its sizes, and the ledger counts what Odoo records.
 
@@ -33,12 +37,12 @@ Know these before you trust a count.
 - **Shopify identities are app names**, because product events expose an app's
   name but not its id. Installing an app is limited to store staff, but a staff
   member could install one named like a registered writer.
-- **Two stock updates in the same second look like one.** Two Shopify stock updates
-  for the same SKU and location within the same second are stored once, because the
-  ledger tells writes apart by record, second and identity, and Shopify stock is
-  always `unattributed`. The ledger can then keep the older level and report drift
-  that isn't there. Webhooks carry no sub-second order, so the fix is to read the
-  current level back from Shopify.
+- **Two stock updates in the same second are one write.** The ledger tells writes
+  apart by record, second and identity, and Shopify stock is always `unattributed`,
+  so two Shopify updates of the same SKU and location within a second become one
+  write, holding the last one received. Webhooks carry no sub-second order: if they
+  arrive out of order, the ledger holds the older level and can report drift that
+  isn't there. The fix is to read the current level back from Shopify.
 
 ## The ledger and the check
 

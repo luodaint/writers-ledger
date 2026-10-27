@@ -22,7 +22,7 @@ def one_step_down(monkeypatch):
 
 
 def test_a_stock_count_writes_the_quant_that_is_there():
-    # Not Odoo's create upsert: it skips a count of 0, and the smoke test then found drift that wasn't there.
+    # Not Odoo's create upsert: it sets the count by assignment, which the ORM skips when it equals the reset 0.
     odoo = Odoo(quants=[{"id": 7, "quantity": 1.0}])
     assert traffic.adjust_stock(odoo, {"AL09-38": 5}, {"Barcelona": 14}, "AL09-38", "Barcelona") == 0
     assert odoo.calls[1:] == [

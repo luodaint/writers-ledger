@@ -35,6 +35,15 @@ def test_same_write_twice_is_stored_once(db):
     assert len(ledger.latest_writes(db)) == 1
 
 
+def test_a_record_seen_again_in_the_same_second_keeps_its_latest_state(db):
+    # Odoo counts stock in two requests, write then apply, often within one second. A poll between them
+    # stored the old quantity, the re-read after the apply was dropped as a duplicate, and CI saw drift.
+    assert ledger.record_write(db, write(payload={"sku": "AL03-41", "location": "Milan", "quantity": 9})) is True
+    assert ledger.record_write(db, write(payload={"sku": "AL03-41", "location": "Milan", "quantity": 12})) is True
+    [row] = ledger.latest_writes(db)
+    assert row["payload"]["quantity"] == 12
+
+
 def test_two_writers_on_the_same_record_in_the_same_second_are_both_kept(db):
     assert ledger.record_write(db, write(identity="stock@alohas.test")) is True
     assert ledger.record_write(db, write(identity="admin")) is True

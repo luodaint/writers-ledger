@@ -63,7 +63,7 @@ def adjust_stock(odoo: Odoo, products: dict, locations: dict, sku: str, location
     quants = odoo("stock.quant", "search_read", domain=[[k, "=", v] for k, v in where.items()], fields=["quantity"])
     quantity = max(0, int(quants[0]["quantity"] if quants else 0) + rng.choice([-2, -1, 1, 2, 3]))
     context = {"inventory_mode": True}
-    if quants:  # write, not create: Odoo's create upsert skips a count equal to its reset value, so 0 never applies
+    if quants:  # write, not create: Odoo's create upsert sets the count by assignment, which skips a 0
         ids = [quants[0]["id"]]
         odoo("stock.quant", "write", ids=ids, vals={"inventory_quantity": quantity}, context=context)
     else:  # Odoo's scheduler deletes a quant that reached zero; counting stock there makes a new one

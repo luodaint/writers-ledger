@@ -68,11 +68,13 @@ def connect(path) -> sqlite3.Connection:
 
 
 def record_write(conn, write: dict) -> bool:
-    """Store a write; False if it was already in the ledger (same record, moment and writer)."""
+    """Store a write; False if the ledger already had it (same record, second and writer, same state).
+    Seen again with a newer state, say a stock count applied within the second it was set, it keeps the newer."""
     with conn:
         cur = conn.execute(
-            "INSERT OR IGNORE INTO writes (seen_at, written_at, system, model, record_ref,"
-            " identity, action, payload) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO writes (seen_at, written_at, system, model, record_ref, identity, action, payload)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (system, model, record_ref, written_at, identity)"
+            " DO UPDATE SET payload = excluded.payload WHERE payload != excluded.payload",
             (now(), write["written_at"], write["system"], write["model"], write["record_ref"],
              write["identity"], write["action"], json.dumps(write["payload"], sort_keys=True)),
         )
