@@ -22,8 +22,9 @@ KEY_NAME = "writers-ledger demo"
 KEY_DAYS = {"admin": 7}  # everyone else 89: Odoo caps internal users at 90; `make seed` rotates
 BOTS = {  # role -> login, name, extra groups
     "ledger": ("ledger@alohas.test", "Writers Ledger collector (read-only)", []),
+    # Product rights too: more than writers.yaml allows it, which is the scope-creep incident.
     "sync": ("sync@alohas.test", "Shopify-Odoo sync",
-             ["sales_team.group_sale_salesman_all_leads", "base.group_partner_manager"]),
+             ["sales_team.group_sale_salesman_all_leads", "base.group_partner_manager", "product.group_product_manager"]),
     "stock": ("stock@alohas.test", "Stock cron", ["stock.group_stock_user"]),
     "pmo": ("pmo@alohas.test", "PMO scripts", []),
 }

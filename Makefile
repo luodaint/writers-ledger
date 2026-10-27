@@ -1,10 +1,10 @@
 # Offline stack by default. For the live file: make up COMPOSE="docker compose"
 COMPOSE ?= docker compose -f docker-compose.fake.yml
 
-.PHONY: help up down logs test lint loc seed traffic smoke
+.PHONY: help up down logs test lint loc seed traffic check smoke
 
 help: ## List the targets
-	@grep -E '^[a-z]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  make %-6s %s\n", $$1, $$2}'
+	@grep -E '^[a-z]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  make %-8s %s\n", $$1, $$2}'
 
 up: ## Start Odoo, Postgres and the app (http://127.0.0.1:8000)
 	$(COMPOSE) up -d --build --wait
@@ -32,8 +32,11 @@ loc: ## Count app code lines (non-blank, non-comment Python in app/)
 seed: ## Create Odoo users with their API keys, products, locations and stock
 	$(COMPOSE) run --rm -T seed < sim/seed_odoo.py
 
-traffic: ## Play a few simulated days of normal writes from every writer
+traffic: ## Play simulated days of writes from every writer, plus the four planted incidents
 	$(COMPOSE) run --rm -T traffic
+
+check: ## Run a check now: the rules over the ledger and writers.yaml
+	$(COMPOSE) exec -T app python -c 'from app.main import run_check; run_check()'
 
 smoke: ## Check the running offline demo end to end (what CI runs after seed and traffic)
 	$(COMPOSE) exec -T app python -m sim.smoke

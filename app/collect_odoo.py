@@ -5,7 +5,6 @@ Polling sees only the last writer of each record; see README for the audit-trail
 import json
 import logging
 import os
-import threading
 from datetime import datetime, timedelta
 
 import httpx
@@ -134,9 +133,3 @@ def poll_once(conn, cache: dict, **kwargs) -> int:
     except Exception as e:  # noqa: BLE001 - the ledger page must keep working while Odoo is down
         log.warning("Odoo poll failed: %s: %s", type(e).__name__, e)
         return 0
-
-
-def run_forever(db_path, stop: threading.Event) -> None:
-    conn, cache = ledger.connect(db_path), {}
-    while not stop.wait(POLL_SECONDS):
-        poll_once(conn, cache)

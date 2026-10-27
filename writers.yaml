@@ -10,6 +10,12 @@
   identity: { odoo_user: stock@alohas.test, shopify_app: stock-sync }
   may_write: [odoo:stock.quant, shopify:inventory_level]
 
+- id: shopify-storefront
+  owner: ecommerce
+  purpose: Customers' own orders on the online store
+  identity: { shopify_app: Online Store }
+  may_write: [shopify:order]
+
 - id: pmo-pricing-script
   owner: ""            # deliberately ownerless for the demo
   purpose: Bulk-updates product metafields for drops

@@ -22,12 +22,9 @@ def problems(text):
 
 
 def test_repo_register_loads():
-    writers = load_register(REPO / "writers.yaml")
-    assert [w.id for w in writers] == ["shopify-odoo-sync", "stock-cron", "pmo-pricing-script"]
-    pmo = writers[2]
-    assert pmo.owner == ""
-    assert pmo.identity == {"shopify_app": "pricing-tool"}
-    assert pmo.may_write == ("shopify:product",)
+    """The shipped writers.yaml is valid. The demo edits it, so its content is checked end to end
+    by sim/smoke.py rather than pinned here."""
+    assert load_register(REPO / "writers.yaml")
 
 
 def test_valid_writer_is_parsed_into_a_writer():
@@ -104,7 +101,13 @@ def test_yaml_tags_are_never_executed(tmp_path):
 
 
 def test_writer_for_matches_the_identity_of_that_system():
-    writers = load_register(REPO / "writers.yaml")
+    writers = parse_register("""
+- id: stock-cron
+  owner: sysadmin
+  purpose: Pushes Odoo stock levels to Shopify locations
+  identity: { odoo_user: stock@alohas.test, shopify_app: stock-sync }
+  may_write: [odoo:stock.quant, shopify:inventory_level]
+""")
     assert writer_for(writers, "odoo", "stock@alohas.test").id == "stock-cron"
     assert writer_for(writers, "shopify", "stock-sync").id == "stock-cron"
     assert writer_for(writers, "shopify", "stock@alohas.test") is None

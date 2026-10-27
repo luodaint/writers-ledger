@@ -1,4 +1,10 @@
-"""Play out a few simulated days of normal traffic from every writer in writers.yaml.
+"""Play out a few simulated days of normal traffic from every writer in writers.yaml,
+plus the four planted incidents the ledger must find:
+
+1. The forgotten cron: a script with the admin key resets Milan stock every night.
+2. Scope creep: shopify-odoo-sync starts copying Shopify prices into Odoo products.
+3. Ownerless: pmo-pricing-script updates products, and nobody owns it.
+4. Drift: one stock push to Barcelona sends the wrong number.
 
 Odoo writes go through the JSON-2 API with each writer's own key, so Odoo records
 who did what. Shopify writes go through the Admin API as each writer's own app:
@@ -15,6 +21,7 @@ from sim import catalog, shopify
 DAYS = int(os.environ.get("TRAFFIC_DAYS", "3"))
 KEYS_FILE = os.environ.get("ODOO_KEYS_FILE", "/secrets/odoo-keys.json")
 rng = random.Random(int(os.environ.get("TRAFFIC_SEED", "7")))
+DRIFT = ("AL05-38", "Barcelona")  # incident 4: the SKU and shop whose stock push goes wrong
 # Made-up customers, so the redaction in front of the LLM has something to remove.
 CUSTOMERS = [("Laura Pérez", "laura.perez@example.com"), ("Marco Rossi", "marco.rossi@example.com"),
              ("Ana Vidal", "ana.vidal@example.com"), ("Giulia Bianchi", "giulia.b@example.com")]
@@ -62,12 +69,12 @@ def adjust_stock(odoo: Odoo, products: dict, locations: dict, sku: str, location
 
 
 def main() -> None:
-    sync, stock = Odoo("sync"), Odoo("stock")
+    sync, stock, admin = Odoo("sync"), Odoo("stock"), Odoo("admin")
     products = ids_by(stock, "product.product", "default_code")
     locations = {name: id for name, id in ids_by(stock, "stock.location", "name").items() if name in catalog.LOCATIONS}
     shop = shopify.connect()
     skus = [v[0] for v in catalog.variants()]
-    counts = {"orders": 0, "stock": 0, "products": 0}
+    counts = {"orders": 0, "stock": 0, "products": 0, "forgotten cron": 0, "scope creep": 0}
     for day in range(1, DAYS + 1):
         for _ in range(4):
             order = rng.sample(skus, rng.randint(1, 2))
@@ -78,10 +85,17 @@ def main() -> None:
             sku, location = rng.choice(skus), rng.choice(catalog.LOCATIONS)
             shop.set_stock(sku, location, adjust_stock(stock, products, locations, sku, location))
             counts["stock"] += 1
-        shop.update_product(rng.choice(catalog.SHOES), {"drop": f"day-{day}"})
+        shop.update_product(rng.choice(catalog.SHOES), {"drop": f"day-{day}"})  # incident 3: no owner
         counts["products"] += 1
+        for sku in rng.sample(skus, 4):  # incident 1, overnight; stock-cron then pushes what Odoo has
+            shop.set_stock(sku, "Milan", adjust_stock(admin, products, locations, sku, "Milan"))
+            counts["forgotten cron"] += 1
+        sku = rng.choice(skus)  # incident 2: the sync writes a product price, outside its scope
+        sync("product.product", "write", ids=[products[sku]], vals={"lst_price": float(rng.randint(100, 260))})
+        counts["scope creep"] += 1
         print(f"day {day}: {counts}")
-    print(f"Traffic done: {DAYS} simulated days, {counts}.")
+    shop.set_stock(*DRIFT, adjust_stock(stock, products, locations, *DRIFT) + 3)  # incident 4: Shopify gets 3 too many
+    print(f"Traffic done: {DAYS} simulated days, {counts}, and drift on {DRIFT[0]} in {DRIFT[1]}.")
 
 
 if __name__ == "__main__":
