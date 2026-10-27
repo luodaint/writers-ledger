@@ -4,6 +4,7 @@ the four planted incidents are open findings and normal traffic caused none.
 
 Waits for the collectors and the drift settle window. CI runs it as `make smoke`.
 """
+
 import json
 import os
 import sys
@@ -50,8 +51,7 @@ def wait(missing, what: str, timeout: int) -> None:
 def main(timeout: int = 240) -> None:
     conn = ledger.connect(os.environ.get("LEDGER_DB", "/data/ledger.db"))
     wait(lambda: EXPECTED - seen(conn), "Not in the ledger", timeout)
-    for system, model, identity, n in conn.execute(
-            "SELECT system, model, identity, count(*) FROM writes GROUP BY 1, 2, 3 ORDER BY 1, 2, 3"):
+    for system, model, identity, n in conn.execute("SELECT system, model, identity, count(*) FROM writes GROUP BY 1, 2, 3 ORDER BY 1, 2, 3"):
         print(f"{system:8} {model:16} {identity:22} {n:4} writes")
     payloads = [json.dumps(json.loads(p), ensure_ascii=False) for (p,) in conn.execute("SELECT payload FROM writes")]
     if leaks := sum(any(part in p for part in PERSONAL) for p in payloads):
@@ -61,8 +61,7 @@ def main(timeout: int = 240) -> None:
         sys.exit(f"Findings that normal traffic should not cause: {sorted(extra)}")
     for f in ledger.list_findings(conn):
         print(f"{f['status']:8} {f['severity']:6} {f['summary']}")
-    print(f"Smoke test passed: {len(payloads)} writes, every writer seen, no customer data, "
-          "the four planted incidents found and nothing else.")
+    print(f"Smoke test passed: {len(payloads)} writes, every writer seen, no customer data, the four planted incidents found and nothing else.")
 
 
 if __name__ == "__main__":

@@ -8,6 +8,7 @@ two volumes, so each container gets only what it needs:
 - /secrets/writers/odoo-keys.json: the writers' keys and the admin key, for the
   traffic simulator only. The admin key plays the forgotten cron and lasts 7 days.
 """
+
 import datetime
 import json
 import os
@@ -23,8 +24,7 @@ KEY_DAYS = {"admin": 7}  # everyone else 89: Odoo caps internal users at 90; `ma
 BOTS = {  # role -> login, name, extra groups
     "ledger": ("ledger@alohas.test", "Writers Ledger collector (read-only)", []),
     # Product rights too: more than writers.yaml allows it, which is the scope-creep incident.
-    "sync": ("sync@alohas.test", "Shopify-Odoo sync",
-             ["sales_team.group_sale_salesman_all_leads", "base.group_partner_manager", "product.group_product_manager"]),
+    "sync": ("sync@alohas.test", "Shopify-Odoo sync", ["sales_team.group_sale_salesman_all_leads", "base.group_partner_manager", "product.group_product_manager"]),
     "stock": ("stock@alohas.test", "Stock cron", ["stock.group_stock_user"]),
     "pmo": ("pmo@alohas.test", "PMO scripts", []),
 }
@@ -36,17 +36,20 @@ def read_only_group():
     if not group:
         group = env["res.groups"].create({"name": "Writers Ledger: read-only"})
         for model in ("sale.order", "stock.picking"):
-            env["ir.model.access"].create({
-                "name": f"writers-ledger read {model}", "group_id": group.id,
-                "model_id": env["ir.model"]._get_id(model), "perm_read": True,
-            })
+            env["ir.model.access"].create(
+                {
+                    "name": f"writers-ledger read {model}",
+                    "group_id": group.id,
+                    "model_id": env["ir.model"]._get_id(model),
+                    "perm_read": True,
+                }
+            )
     return group
 
 
 def bot(login, name, groups):
     users = env["res.users"].with_context(active_test=False, no_reset_password=True)
-    vals = {"name": name, "login": login, "active": True,
-            "group_ids": [(6, 0, [env.ref("base.group_user").id, *(g.id for g in groups)])]}
+    vals = {"name": name, "login": login, "active": True, "group_ids": [(6, 0, [env.ref("base.group_user").id, *(g.id for g in groups)])]}
     user = users.search([("login", "=", login)], limit=1)
     if user:
         user.write(vals)
@@ -62,15 +65,23 @@ def rotate_key(role, user):
 
 
 def products():
-    size = env["product.attribute"].search([("name", "=", "Size")], limit=1) or env["product.attribute"].create({
-        "name": "Size", "create_variant": "always",
-        "value_ids": [(0, 0, {"name": str(s)}) for s in catalog.SIZES],
-    })
+    size = env["product.attribute"].search([("name", "=", "Size")], limit=1) or env["product.attribute"].create(
+        {
+            "name": "Size",
+            "create_variant": "always",
+            "value_ids": [(0, 0, {"name": str(s)}) for s in catalog.SIZES],
+        }
+    )
     for n, name in enumerate(catalog.SHOES):
-        template = env["product.template"].search([("name", "=", name)], limit=1) or env["product.template"].create({
-            "name": name, "type": "consu", "is_storable": True, "list_price": 120 + 10 * n,
-            "attribute_line_ids": [(0, 0, {"attribute_id": size.id, "value_ids": [(6, 0, size.value_ids.ids)]})],
-        })
+        template = env["product.template"].search([("name", "=", name)], limit=1) or env["product.template"].create(
+            {
+                "name": name,
+                "type": "consu",
+                "is_storable": True,
+                "list_price": 120 + 10 * n,
+                "attribute_line_ids": [(0, 0, {"attribute_id": size.id, "value_ids": [(6, 0, size.value_ids.ids)]})],
+            }
+        )
         for variant in template.product_variant_ids:
             sku = catalog.sku(n, int(variant.product_template_attribute_value_ids.name))
             if variant.default_code != sku:  # unchanged records stay untouched: a re-seed must not look like writes
@@ -93,8 +104,7 @@ def stock(locs):
     for variant in env["product.product"].search([("default_code", "=like", "AL%")]):
         for name, location in locs.items():
             if not Quant.search_count([("product_id", "=", variant.id), ("location_id", "=", location.id)]):
-                new |= Quant.create({"product_id": variant.id, "location_id": location.id,
-                                     "inventory_quantity": catalog.initial_stock(variant.default_code, name)})
+                new |= Quant.create({"product_id": variant.id, "location_id": location.id, "inventory_quantity": catalog.initial_stock(variant.default_code, name)})
     new.action_apply_inventory()
     return len(new)
 
@@ -112,8 +122,7 @@ env["res.config.settings"].create({"group_stock_multi_locations": True}).execute
 products()
 quants = stock(locations())
 readonly = read_only_group()
-users = {role: bot(login, name, [env.ref(g) for g in groups] + ([readonly] if role == "ledger" else []))
-         for role, (login, name, groups) in BOTS.items()}
+users = {role: bot(login, name, [env.ref(g) for g in groups] + ([readonly] if role == "ledger" else [])) for role, (login, name, groups) in BOTS.items()}
 users["admin"] = env.ref("base.user_admin")
 keys = {role: {"login": user.login, "key": rotate_key(role, user)} for role, user in users.items()}
 env.cr.commit()
@@ -121,5 +130,4 @@ env.registry.signal_changes()  # tell the running Odoo server its access caches 
 seeded = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d %H:%M:%S")  # Odoo's write_date format
 write_keys(COLLECTOR_FILE, {"ledger": keys.pop("ledger"), "since": seeded})  # the collector starts here
 write_keys(WRITERS_FILE, keys)
-print(f"Seeded Odoo: {len(catalog.variants())} variants, {quants} new stock lines. "
-      f"Collector key in {COLLECTOR_FILE}; keys for {', '.join(keys)} in {WRITERS_FILE}.")
+print(f"Seeded Odoo: {len(catalog.variants())} variants, {quants} new stock lines. Collector key in {COLLECTOR_FILE}; keys for {', '.join(keys)} in {WRITERS_FILE}.")

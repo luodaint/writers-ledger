@@ -1,8 +1,13 @@
 import pathlib
 import re
 
-SAFE_DEFAULTS = {"ODOO_DB": "writers", "POLL_SECONDS": "30", "SHOPIFY_STORE": "your-dev-store.myshopify.com",
-                 "TRIAGE_MODEL_SMALL": "claude-haiku-5-5", "TRIAGE_MODEL_LARGE": "claude-sonnet-5-5"}
+SAFE_DEFAULTS = {
+    "ODOO_DB": "writers",
+    "POLL_SECONDS": "30",
+    "SHOPIFY_STORE": "your-dev-store.myshopify.com",
+    "TRIAGE_MODEL_SMALL": "claude-haiku-5-5",
+    "TRIAGE_MODEL_LARGE": "claude-sonnet-5-5",
+}
 
 
 def test_env_example_lists_names_not_values():

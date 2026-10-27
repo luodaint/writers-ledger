@@ -1,4 +1,5 @@
 """The web app: one page behind basic auth, a public health check, the collectors, checks and triage."""
+
 import logging
 import os
 import pathlib
@@ -36,8 +37,7 @@ CLAUDE = triage.client()  # None without ANTHROPIC_API_KEY: triage is off
 ODOO_CACHE = {}  # logins, SKUs and locations already looked up
 
 SECURITY_HEADERS = {
-    "Content-Security-Policy": "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; "
-    "form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+    "Content-Security-Policy": "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
     "Referrer-Policy": "same-origin",  # no-referrer would make our own form posts say `Origin: null`
@@ -61,21 +61,17 @@ def require_login(creds: HTTPBasicCredentials = Depends(HTTPBasic())) -> None:
 
 def writer_rows(writers, activity: dict) -> tuple[list, list]:
     """Identities seen in the ledger but missing from the register, then each writer with its activity."""
-    unknown = [{"system": system, "identity": identity, **stats}
-               for (system, identity), stats in sorted(activity.items())
-               if not writer_for(writers, system, identity)]
+    unknown = [{"system": system, "identity": identity, **stats} for (system, identity), stats in sorted(activity.items()) if not writer_for(writers, system, identity)]
     rows = []
     for w in writers:
         mine = [stats for (system, identity), stats in activity.items() if writer_for([w], system, identity)]
-        rows.append({"writer": w, "writes": sum(s["writes"] for s in mine),
-                     "last_seen": max((s["last_seen"] for s in mine), default=None)})
+        rows.append({"writer": w, "writes": sum(s["writes"] for s in mine), "last_seen": max((s["last_seen"] for s in mine), default=None)})
     return unknown, rows
 
 
 def with_triage(findings: list[dict], results: dict) -> list[dict]:
     """Each finding with its latest triage, shown at the higher of the rule's and Claude's severity."""
-    return [f | {"triage": t, "severity": rules.raised(f["severity"], t["severity"]) if t else f["severity"]}
-            for f in findings for t in [results.get(f["fingerprint"])]]
+    return [f | {"triage": t, "severity": rules.raised(f["severity"], t["severity"]) if t else f["severity"]} for f in findings for t in [results.get(f["fingerprint"])]]
 
 
 def reload_register() -> tuple[list, str | None]:
@@ -108,9 +104,9 @@ def run_triage() -> None:
     writers, _ = reload_register()
     with closing(ledger.connect(LEDGER_DB)) as conn:
         done, run = ledger.triaged_keys(conn), ledger.now()
-        todo = [(f, *triage.prepare(f, writers)) for f in ledger.list_findings(conn)
-                if f["status"] == "open" and f["severity"] != "info"]  # unattributed writes stay a note
-        for f, payload, key in [(f, p, k) for f, p, k in todo if k not in done][:triage.PER_RUN]:
+        # unattributed writes stay a note
+        todo = [(f, *triage.prepare(f, writers)) for f in ledger.list_findings(conn) if f["status"] == "open" and f["severity"] != "info"]
+        for f, payload, key in [(f, p, k) for f, p, k in todo if k not in done][: triage.PER_RUN]:
             result, calls = triage.triage(CLAUDE, payload)
             ledger.save_calls(conn, run, f["fingerprint"], calls)
             if result is None:  # Claude unreachable: the rest waits for the next run
@@ -168,11 +164,19 @@ def index(request: Request, system: str = "", model: str = "", identity: str = "
     writers, problem = reload_register()
     with closing(ledger.connect(LEDGER_DB)) as conn:
         unknown, rows = writer_rows(writers, ledger.activity(conn))
-        context = {"unknown": unknown, "writers": rows, "filters": filters, "loc": LOC,
-                   "writes": ledger.latest_writes(conn, **filters), "options": ledger.filter_options(conn, **filters),
-                   "findings": rules.rank(with_triage(ledger.list_findings(conn), ledger.latest_triage(conn))),
-                   "last_check": ledger.get_cursor(conn, "check:last"), "register_error": problem,
-                   "triage_on": CLAUDE is not None, "cost": ledger.last_run_cost(conn)}
+        context = {
+            "unknown": unknown,
+            "writers": rows,
+            "filters": filters,
+            "loc": LOC,
+            "writes": ledger.latest_writes(conn, **filters),
+            "options": ledger.filter_options(conn, **filters),
+            "findings": rules.rank(with_triage(ledger.list_findings(conn), ledger.latest_triage(conn))),
+            "last_check": ledger.get_cursor(conn, "check:last"),
+            "register_error": problem,
+            "triage_on": CLAUDE is not None,
+            "cost": ledger.last_run_cost(conn),
+        }
     context["unregistered"] = {(u["system"], u["identity"]) for u in unknown if u["identity"] != UNATTRIBUTED}
     return templates.TemplateResponse(request, "index.html", context)
 

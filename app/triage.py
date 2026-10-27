@@ -3,6 +3,7 @@
 The model sees an allowlisted summary, never payloads, and redact.py masks it again. Its
 answers are checked against the schema and capped. The rule's severity is a floor.
 """
+
 import hashlib
 import json
 import logging
@@ -19,8 +20,11 @@ log = logging.getLogger("triage")
 SMALL = os.environ.get("TRIAGE_MODEL_SMALL", "claude-haiku-5-5")
 LARGE = os.environ.get("TRIAGE_MODEL_LARGE", "claude-sonnet-5-5")
 PROMPTS = yaml.safe_load((pathlib.Path(__file__).parent / "triage.yaml").read_text())
-PRICES = {"claude-haiku-5-5": (0.10, 0.50), "claude-sonnet-5-5": (2.00, 10.00),  # $ per million tokens: in, out
-          "claude-sonnet-5": (2.00, 10.00)}  # where Sonnet 5.5's declined requests fall back
+PRICES = {  # $ per million tokens: in, out
+    "claude-haiku-5-5": (0.10, 0.50),
+    "claude-sonnet-5-5": (2.00, 10.00),
+    "claude-sonnet-5": (2.00, 10.00),  # where Sonnet 5.5's declined requests fall back
+}
 MAX_TEXT = 1500  # characters kept of any answer
 PER_RUN = 20  # findings triaged per run, so a flood of findings can't run up the bill
 BUCKETS = (5, 1)  # writes round down to the rubric's one count line (triage.yaml): a growing count rarely re-pays
@@ -39,12 +43,17 @@ def prepare(finding: dict, writers) -> tuple[dict, str]:
     and the prompts. Drift quantities stay out of the key, so a sync outage doesn't pay on every sale."""
     writer = next((w for w in writers if w.id == finding["writer_id"]), None)
     identity = finding["identity"]
-    payload = redact.redact({
-        "rule": finding["rule"], "rule_severity": finding["severity"],
-        "what_changed": f"{finding['system']}:{finding['model']}", "writes": finding["count"],
-        "identity": "[login]" if redact.EMAIL.fullmatch(identity) else identity, "stock": finding["facts"] or None,
-        "writer": writer and {"id": writer.id, "owner": writer.owner, "purpose": writer.purpose,
-                              "may_write": list(writer.may_write)}})
+    payload = redact.redact(
+        {
+            "rule": finding["rule"],
+            "rule_severity": finding["severity"],
+            "what_changed": f"{finding['system']}:{finding['model']}",
+            "writes": finding["count"],
+            "identity": "[login]" if redact.EMAIL.fullmatch(identity) else identity,
+            "stock": finding["facts"] or None,
+            "writer": writer and {"id": writer.id, "owner": writer.owner, "purpose": writer.purpose, "may_write": list(writer.may_write)},
+        }
+    )
     bucket = next(b for b in BUCKETS if finding["count"] >= b)
     keyed = [finding["fingerprint"], payload | {"writes": bucket, "stock": None}, PROMPTS, SMALL, LARGE]
     return payload, hashlib.sha256(json.dumps(keyed, sort_keys=True).encode()).hexdigest()[:16]
@@ -74,16 +83,23 @@ def conform(answer, schema: dict) -> dict:
 def ask(claude, step: str, payload: dict) -> tuple[dict, dict]:
     """One structured call: the answer ({} if declined or off the schema) and the call's tokens and cost."""
     spec = PROMPTS[step]
-    request = {"model": SMALL if step == "rate" else LARGE, "max_tokens": spec["max_tokens"], "system": spec["system"],
-               "output_config": {"effort": spec["effort"], "format": {"type": "json_schema", "schema": spec["schema"]}},
-               "messages": [{"role": "user", "content": json.dumps(payload, sort_keys=True)}]}
+    request = {
+        "model": SMALL if step == "rate" else LARGE,
+        "max_tokens": spec["max_tokens"],
+        "system": spec["system"],
+        "output_config": {"effort": spec["effort"], "format": {"type": "json_schema", "schema": spec["schema"]}},
+        "messages": [{"role": "user", "content": json.dumps(payload, sort_keys=True)}],
+    }
     if "fallbacks" in spec:  # only on the beta endpoint
-        response = claude.beta.messages.create(**request, betas=["server-side-fallback-2026-07-01"],
-                                               fallbacks=spec["fallbacks"])
+        response = claude.beta.messages.create(**request, betas=["server-side-fallback-2026-07-01"], fallbacks=spec["fallbacks"])
     else:
         response = claude.messages.create(**request)
-    call = {"model": response.model, "input_tokens": response.usage.input_tokens,
-            "output_tokens": response.usage.output_tokens, "cost_usd": cost(response.model, response.usage)}
+    call = {
+        "model": response.model,
+        "input_tokens": response.usage.input_tokens,
+        "output_tokens": response.usage.output_tokens,
+        "cost_usd": cost(response.model, response.usage),
+    }
     text = next((block.text for block in response.content if block.type == "text"), "")
     try:
         answer = conform(json.loads(text), spec["schema"]) if response.stop_reason == "end_turn" else {}

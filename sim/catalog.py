@@ -1,9 +1,21 @@
 """The demo catalogue, shared by the Odoo seed, the fake Shopify and the traffic."""
 
 SHOES = [
-    "Rife Sneaker", "Tide Sneaker", "Mary Jane Flat", "Lunar Loafer", "Ballet Flat",
-    "Chelsea Boot", "Western Boot", "Slingback", "Riviera Mule", "Lara Sandal",
-    "Derby", "Clog", "Ankle Boot", "Platform Loafer", "Kitten Heel",
+    "Rife Sneaker",
+    "Tide Sneaker",
+    "Mary Jane Flat",
+    "Lunar Loafer",
+    "Ballet Flat",
+    "Chelsea Boot",
+    "Western Boot",
+    "Slingback",
+    "Riviera Mule",
+    "Lara Sandal",
+    "Derby",
+    "Clog",
+    "Ankle Boot",
+    "Platform Loafer",
+    "Kitten Heel",
 ]
 SIZES = [36, 37, 38, 39, 40, 41]
 LOCATIONS = ["Barcelona", "Milan", "Online warehouse"]
