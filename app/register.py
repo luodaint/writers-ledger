@@ -7,6 +7,7 @@ import yaml
 IDENTITY_KINDS = {"odoo": "odoo_user", "shopify": "shopify_app"}
 KEYS = {"id", "owner", "purpose", "identity", "may_write"}
 SCOPE = re.compile(r"(odoo|shopify):[a-z][a-z0-9_]*(\.[a-z0-9_]+)*")
+UNATTRIBUTED = "unattributed"  # the identity of a write whose system named no author
 
 
 class RegisterError(ValueError):

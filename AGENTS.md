@@ -32,7 +32,7 @@ introduce synonyms.
 | Ledger | The append-only record of writes. |
 | Check | One run of the rules over the ledger and the register. |
 | Rule | `unknown_writer`, `out_of_scope`, `ownerless_writer`, `stock_drift`, plus the informational `unattributed_write`. |
-| Finding | A rule hit, deduplicated by fingerprint (rule + identity + model). Has severity, count, first/last seen, status `open`/`resolved`. |
+| Finding | A rule hit, deduplicated by fingerprint (rule + system + model + identity; for drift, rule + SKU + location). Has severity, count, first/last seen, status `open`/`resolved`. |
 | Drift | Odoo `stock.quant` quantity differs from the Shopify inventory level for the same SKU and location after the settle window. |
 | Triage | The LLM pass: small model rates every finding, large model explains high/critical ones. |
 

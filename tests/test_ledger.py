@@ -117,3 +117,66 @@ def test_timestamps_are_normalised_to_utc(value, expected):
 ])
 def test_identity_keeps_the_unattributed_sentinel_for_nobody(name, stored):
     assert ledger.identity(name) == stored
+
+
+# --- findings and checks -------------------------------------------------------------
+
+def found(**over):
+    base = {"fingerprint": "unknown_writer|odoo|stock.quant|admin", "rule": "unknown_writer", "severity": "high",
+            "system": "odoo", "model": "stock.quant", "identity": "admin", "writer_id": None, "owner": "",
+            "summary": "admin changed odoo:stock.quant 3 times, but writers.yaml doesn't list it.",
+            "facts": {}, "count": 3, "first_seen": "2026-10-26T10:00:00Z", "last_seen": "2026-10-26T11:00:00Z"}
+    return base | over
+
+
+def test_a_check_stores_its_findings_as_open(db):
+    assert ledger.get_cursor(db, "check:last") is None
+    ledger.save_check(db, [found(facts={"sku": "AL01-36"})], "2026-10-27T10:00:00Z")
+    [finding] = ledger.list_findings(db)
+    assert (finding["status"], finding["count"], finding["facts"]) == ("open", 3, {"sku": "AL01-36"})
+    assert ledger.get_cursor(db, "check:last") == "2026-10-27T10:00:00Z"
+
+
+def test_repeating_a_check_does_not_inflate_the_count(db):
+    for minute in range(3):
+        ledger.save_check(db, [found()], f"2026-10-27T10:0{minute}:00Z")
+    [finding] = ledger.list_findings(db)
+    assert finding["count"] == 3
+
+
+def test_count_follows_the_latest_check_and_first_seen_keeps_the_earliest(db):
+    ledger.save_check(db, [found()], "2026-10-27T10:00:00Z")
+    later = found(count=5, first_seen="2026-10-26T10:30:00Z", last_seen="2026-10-26T12:00:00Z")
+    ledger.save_check(db, [later], "2026-10-27T10:05:00Z")
+    [finding] = ledger.list_findings(db)
+    assert (finding["count"], finding["first_seen"], finding["last_seen"]) == (
+        5, "2026-10-26T10:00:00Z", "2026-10-26T12:00:00Z")
+
+
+def test_a_finding_the_next_check_does_not_find_is_resolved_and_can_reopen(db):
+    ledger.save_check(db, [found()], "2026-10-27T10:00:00Z")
+    ledger.save_check(db, [], "2026-10-27T10:05:00Z")
+    [finding] = ledger.list_findings(db)
+    assert (finding["status"], finding["resolved_at"]) == ("resolved", "2026-10-27T10:05:00Z")
+    ledger.save_check(db, [found()], "2026-10-27T10:10:00Z")
+    [finding] = ledger.list_findings(db)
+    assert (finding["status"], finding["resolved_at"]) == ("open", None)
+
+
+def test_findings_come_most_recently_seen_first(db):
+    older, newer = found(fingerprint="a", last_seen="2026-10-26T09:00:00Z"), found(fingerprint="b")
+    ledger.save_check(db, [older, newer], "2026-10-27T10:00:00Z")
+    assert [f["fingerprint"] for f in ledger.list_findings(db)] == ["b", "a"]
+
+
+def test_a_check_reads_recent_writes_and_every_stock_level(db):
+    old = "2026-10-01T10:00:00Z"
+    ledger.record_write(db, write(written_at=old))
+    ledger.record_write(db, write(system="shopify", model="inventory_level", record_ref="8", identity="unattributed",
+                                  written_at=old, payload={"sku": "AL01-36", "location": "Milan", "available": 4}))
+    ledger.record_write(db, write(model="sale.order", record_ref="9", written_at=old, payload={"name": "S1"}))
+    ledger.record_write(db, write(model="sale.order", record_ref="10", payload={"name": "S2"}))
+    rows = ledger.writes_to_check(db, "2026-10-20T00:00:00Z", ("stock.quant", "inventory_level"))
+    assert sorted((r["model"], r["record_ref"]) for r in rows) == [
+        ("inventory_level", "8"), ("sale.order", "10"), ("stock.quant", "7")]
+    assert all(isinstance(r["payload"], dict) for r in rows)

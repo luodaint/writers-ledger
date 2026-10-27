@@ -132,6 +132,7 @@ services:
       ODOO_URL: http://odoo:8069
       ODOO_DB: ${ODOO_DB:-writers}
       POLL_SECONDS: ${POLL_SECONDS:-10}
+      DRIFT_SETTLE_MINUTES: ${DRIFT_SETTLE_MINUTES:-1}  # live: 10. Offline drift shows a minute after the traffic
       LEDGER_DB: /data/ledger.db
     volumes:
       - ./writers.yaml:/srv/writers.yaml:ro

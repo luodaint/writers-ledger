@@ -6,7 +6,7 @@ Every write into Odoo and Shopify lands in a ledger, gets matched against
 `writers.yaml`, and anything unknown, out of scope or ownerless becomes a finding,
 explained in plain words.
 
-> Work in progress (Phase 1 of 4: the ledger). The full README, with the cost per
+> Work in progress (Phase 2 of 4: the rules). The full README, with the cost per
 > check run and the case questions answered, comes in Phase 4.
 
 ## Run it offline
@@ -14,13 +14,75 @@ explained in plain words.
 ```sh
 make up        # Postgres, Odoo 19, a fake Shopify and the app (first boot ~2 min)
 make seed      # Odoo bot users with their own API keys, 15 shoes x 6 sizes, 3 shops, stock
-make traffic   # three simulated days of normal writes from every writer
+make traffic   # three simulated days of writes from every writer, plus four planted incidents
 ```
 
 Open <http://127.0.0.1:8000> and log in as `reviewer` / `local-only-demo`. The
 ledger fills within 10 seconds of the traffic. Odoo is at <http://127.0.0.1:8069>
 (`admin` / `local-only-admin`). These defaults only work offline: every port is
 bound to `127.0.0.1`. Change them in `.env` (see `.env.example`).
+
+## The demo: four findings, and the register is the fix
+
+About a minute after `make traffic`, the page shows four findings:
+
+| Severity | Finding | What happened |
+|---|---|---|
+| High | Someone who is not in the register is writing | A forgotten cron uses the Odoo **admin** key to reset Milan stock every night. |
+| High | A writer is changing something it isn't allowed to | `shopify-odoo-sync` started writing product prices in Odoo. |
+| Medium | A writer that nobody owns is active | `pmo-pricing-script` updates products, and its owner is empty. |
+| High | Odoo and Shopify disagree about stock | One stock push sent Barcelona 3 pairs too many of `AL05-38`. |
+
+Below them, a grey note counts the Shopify stock changes that nobody can be blamed
+for: Shopify doesn't say which app changes inventory.
+
+The sync wrote 3 prices but the finding says 18 writes. Odoo keeps a shoe's price on
+the shoe, so changing it updates all six of its sizes, and the ledger counts what
+Odoo records.
+
+Now fix the register. Open `writers.yaml` and:
+
+1. Give `pmo-pricing-script` an owner: `owner: pmo`.
+2. Register the cron, with an owner who will replace the admin key with a bot of its own:
+
+   ```yaml
+   - id: milan-stock-reset
+     owner: sysadmin
+     purpose: Nightly Milan stock reset. Move it off the admin key.
+     identity: { odoo_user: admin }
+     may_write: [odoo:stock.quant]
+   ```
+
+3. Press **Run check now** (or `make check`). Both findings move to *Resolved*.
+   No restart: every check re-reads `writers.yaml`. A half-saved, broken file pauses
+   the checks and shows the problem on the page; nothing resolves until it's fixed.
+
+The other two are fixed outside the register. Take the product rights away from
+the sync bot in Odoo, or, if it should write prices, add `odoo:product.product` to
+its `may_write`. Correct the Barcelona stock. To kill the cron instead of
+registering it, revoke its key: the finding resolves when its last write is older
+than the 7-day window.
+
+## How a check works
+
+The check runs after every Odoo poll, on the **Run check now** button, and from
+`make check`. It applies four rules to the ledger and the register, in
+[`app/rules.py`](app/rules.py), with no AI involved:
+
+- **unknown_writer** (high): the identity isn't in the register.
+- **out_of_scope** (high): the writer changed a `system:model` missing from its `may_write`.
+- **ownerless_writer** (medium): a writer with an empty owner wrote something.
+- **stock_drift** (high): for a SKU and location, the newest Odoo quantity and the
+  newest Shopify level differ, and neither changed in the last
+  `DRIFT_SETTLE_MINUTES` (10 live, 1 offline). A sync in flight isn't drift.
+
+Writes Shopify can't attribute are counted apart, as `unattributed_write`, and
+never become a card. Repeats collapse into one finding per rule, system, model and
+identity, so 40 rogue writes are one finding that says 40. The count is what the
+ledger observed in the last 7 days. Polling sees only the last writer of a record
+between two polls, so the real number can be higher. The button only accepts a
+post from the page itself, because browsers send basic auth along with forged
+cross-site posts too.
 
 ## How the Odoo API keys are handled
 
@@ -32,10 +94,10 @@ say *who* made a change.
 | Odoo login | Used by | Allowed by Odoo to |
 |---|---|---|
 | `ledger@alohas.test` | the app's collector | **read only**: a custom group, "Writers Ledger: read-only" |
-| `sync@alohas.test` | the simulated `shopify-odoo-sync` | create customers and sale orders |
+| `sync@alohas.test` | the simulated `shopify-odoo-sync` | create customers and sale orders, and edit products (the scope-creep incident) |
 | `stock@alohas.test` | the simulated `stock-cron` | count and adjust stock |
 | `pmo@alohas.test` | not used yet | read |
-| `admin` | the "forgotten cron" incident (Phase 2); this key lasts 7 days | everything |
+| `admin` | the "forgotten cron" incident; this key lasts 7 days | everything |
 
 The collector checks its own key on every poll and **refuses to poll if the key
 can write** to any watched model.
@@ -97,6 +159,21 @@ folder where Dokploy checked out the repo:
   and phone numbers are dropped on arrival.
 - The fake Shopify keeps its stock, orders and events on a volume, so rebuilding
   doesn't reset Shopify while Odoo keeps its stock.
+- Offline, `writers.yaml` is mounted into the app as a single file. On Docker
+  Desktop and OrbStack (macOS) every save shows up. On Linux, an editor that saves
+  by replacing the file (vim does by default) leaves the container on the old
+  copy: run `docker compose -f docker-compose.fake.yml restart app` after saving.
+- Two Shopify stock updates for the same SKU and location within the same second
+  are stored once, because the ledger tells writes apart by record, second and
+  identity, and Shopify stock is always `unattributed`. The ledger can then keep
+  the older level and report drift that isn't there. Webhooks also carry no
+  sub-second order, so the fix is to read the current level back from Shopify.
+- Each check reads every stock level the ledger ever stored, because drift needs the
+  newest one however old it is. That takes about 20 ms for a few thousand writes.
+  After months of live webhooks, keep the newest level per SKU and location in a
+  table of its own.
+- Coming from Phase 1? Run `make seed` once more: the sync bot needs its product
+  rights, and the keys rotate.
 
 ## Develop
 
