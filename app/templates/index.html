@@ -5,9 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Writers Ledger</title>
   <link rel="stylesheet" href="/style.css">
+  <script src="/page.js" defer></script>
 </head>
 <body>
 {% macro when(value) %}{% if value %}{{ value[:16] | replace("T", " ") }} UTC{% else %}never{% endif %}{% endmacro %}
+{# A link to the ledger filtered by one more value, keeping the filters already set. #}
+{% macro only(name, value) %}?{{ dict(filters, **{name: value}) | dictsort | selectattr(1) | list | urlencode }}#ledger{% endmacro %}
+{% macro shown(value) %}{% if value is float and value == value | int %}{{ value | int }}{% elif value is iterable and value is not string %}{{ value | join(", ") }}{% else %}{{ value }}{% endif %}{% endmacro %}
 <header>
   <h1>Writers Ledger</h1>
   <p class="lede">Every change made to Odoo and Shopify, who made it, and whether they were allowed to.</p>
@@ -32,7 +36,10 @@
   <section id="findings">
     <div class="section-head">
       <h2>Findings</h2>
-      <form method="post" action="/check"><button type="submit">Run check now</button></form>
+      <form method="post" action="/check">
+        {% if last_check %}<span class="muted">Last check {{ last_check[11:19] }} UTC</span>{% endif %}
+        <button type="submit" data-busy="Checking…">Run check now</button>
+      </form>
     </div>
     <p class="hint">Things that need a person's attention, most urgent first. The check runs every few seconds.</p>
     {% if register_error %}
@@ -135,14 +142,18 @@
 
   <section id="ledger">
     <h2>Ledger</h2>
-    <p class="hint">The latest 200 writes seen in Odoo and Shopify.</p>
+    <p class="hint">The latest 200 writes seen in Odoo and Shopify. Click a system, writer or model to filter by it.</p>
     <form class="filters" method="get" action="/#ledger">
       {% for name, label in [("system", "System"), ("model", "What changed"), ("identity", "Who")] %}
+      {% set values = options[name] | map("first") | list %}
       <label>{{ label }}
         <select name="{{ name }}">
           <option value="">All</option>
-          {% for value in options[name] %}
-          <option value="{{ value }}" {{ "selected" if filters[name] == value }}>{{ value }}</option>
+          {% if filters[name] and filters[name] not in values %}
+          <option value="{{ filters[name] }}" selected>{{ filters[name] }} (0)</option>
+          {% endif %}
+          {% for value, count in options[name] %}
+          <option value="{{ value }}"{{ " selected" if filters[name] == value }}>{{ value }} ({{ count }})</option>
           {% endfor %}
         </select>
       </label>
@@ -152,20 +163,20 @@
     </form>
     {% if writes %}
     <div class="table-wrap">
-      <table>
+      <table class="ledger">
         <thead>
-          <tr><th>When</th><th>Who</th><th>Change</th><th>What changed</th><th>Details</th></tr>
+          <tr><th>When</th><th>System</th><th>Who</th><th>Change</th><th>What changed</th><th>Details</th></tr>
         </thead>
         <tbody>
         {% for w in writes %}
           <tr>
             <td class="nowrap">{{ when(w.written_at) }}</td>
-            <td>{% if (w.system, w.identity) in unregistered %}<span class="badge red">{{ w.identity }}</span>
-              {% elif w.identity == "unattributed" %}<span class="badge amber">unattributed</span>
-              {% else %}{{ w.identity }}{% endif %}</td>
+            <td><a class="badge system" href="{{ only("system", w.system) }}">{{ w.system | capitalize }}</a></td>
+            <td><a class="pick{% if (w.system, w.identity) in unregistered %} badge red{% elif w.identity == "unattributed" %} badge amber{% endif %}"
+                   href="{{ only("identity", w.identity) }}">{{ w.identity }}</a></td>
             <td>{{ "created" if w.action == "create" else "changed" }}</td>
-            <td><code>{{ w.system }}:{{ w.model }}</code><div class="ref">{{ w.record_ref | replace("gid://shopify/", "") }}</div></td>
-            <td class="details">{% for key, value in w.payload.items() %}<span>{{ key }}: <strong>{{ value | join(", ") if value is iterable and value is not string else value }}</strong></span>{% endfor %}</td>
+            <td><a class="pick" href="{{ only("model", w.model) }}"><code>{{ w.model }}</code></a><div class="ref">{{ w.record_ref | replace("gid://shopify/", "") }}</div></td>
+            <td class="details">{% for key, value in w.payload.items() %}<span>{{ key }}: <strong>{{ shown(value) }}</strong></span>{% endfor %}</td>
           </tr>
         {% endfor %}
         </tbody>

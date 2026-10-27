@@ -79,17 +79,28 @@ def record_write(conn, write: dict) -> bool:
     return cur.rowcount == 1
 
 
-def latest_writes(conn, limit=200, **filters) -> list[dict]:
+def matching(filters: dict) -> tuple[str, list]:
+    """A WHERE clause for exact-match filters. Column names come from FILTERS, values are parameters."""
     if unknown := set(filters) - set(FILTERS):
         raise ValueError(f"unknown filter {unknown}")
-    where = [(f"{k} = ?", v) for k, v in filters.items() if v]
-    sql = "SELECT * FROM writes" + (" WHERE " + " AND ".join(w for w, _ in where) if where else "")
-    rows = conn.execute(sql + " ORDER BY written_at DESC, id DESC LIMIT ?", [v for _, v in where] + [limit])
+    used = {k: v for k, v in filters.items() if v}
+    return (" WHERE " + " AND ".join(f"{k} = ?" for k in used) if used else ""), list(used.values())
+
+
+def latest_writes(conn, limit=200, **filters) -> list[dict]:
+    where, values = matching(filters)
+    rows = conn.execute(f"SELECT * FROM writes{where} ORDER BY written_at DESC, id DESC LIMIT ?", [*values, limit])
     return [dict(r) | {"payload": json.loads(r["payload"])} for r in rows]
 
 
-def filter_options(conn) -> dict[str, list[str]]:
-    return {k: [r[0] for r in conn.execute(f"SELECT DISTINCT {k} FROM writes ORDER BY 1")] for k in FILTERS}
+def filter_options(conn, **filters) -> dict[str, list[tuple[str, int]]]:
+    """Each filter's values and counts under the other filters: a filter never narrows its own list."""
+    options = {}
+    for k in FILTERS:
+        where, values = matching({other: v for other, v in filters.items() if other != k})
+        options[k] = [tuple(r) for r in conn.execute(f"SELECT {k}, count(*) FROM writes{where} GROUP BY 1 ORDER BY 1",
+                                                     values)]
+    return options
 
 
 def activity(conn) -> dict[tuple[str, str], dict]:

@@ -59,12 +59,16 @@ def sync_order(odoo: Odoo, products: dict, skus: list[str]) -> None:
 
 def adjust_stock(odoo: Odoo, products: dict, locations: dict, sku: str, location: str) -> int:
     """stock-cron: counts stock in Odoo; returns the new quantity to push to Shopify."""
-    domain = [["product_id", "=", products[sku]], ["location_id", "=", locations[location]]]
-    [quant] = odoo("stock.quant", "search_read", domain=domain, fields=["quantity"])
-    quantity = max(0, int(quant["quantity"]) + rng.choice([-2, -1, 1, 2, 3]))
+    where = {"product_id": products[sku], "location_id": locations[location]}
+    quants = odoo("stock.quant", "search_read", domain=[[k, "=", v] for k, v in where.items()], fields=["quantity"])
+    quantity = max(0, int(quants[0]["quantity"] if quants else 0) + rng.choice([-2, -1, 1, 2, 3]))
     context = {"inventory_mode": True}
-    odoo("stock.quant", "write", ids=[quant["id"]], vals={"inventory_quantity": quantity}, context=context)
-    odoo("stock.quant", "action_apply_inventory", ids=[quant["id"]], context=context)
+    if quants:
+        ids = [quants[0]["id"]]
+        odoo("stock.quant", "write", ids=ids, vals={"inventory_quantity": quantity}, context=context)
+    else:  # Odoo's scheduler deletes a quant that reached zero; counting stock there makes a new one
+        ids = odoo("stock.quant", "create", vals_list=[where | {"inventory_quantity": quantity}], context=context)
+    odoo("stock.quant", "action_apply_inventory", ids=ids, context=context)
     return quantity
 
 

@@ -36,7 +36,7 @@ CLAUDE = triage.client()  # None without ANTHROPIC_API_KEY: triage is off
 ODOO_CACHE = {}  # logins, SKUs and locations already looked up
 
 SECURITY_HEADERS = {
-    "Content-Security-Policy": "default-src 'none'; style-src 'self'; img-src 'self'; "
+    "Content-Security-Policy": "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; "
     "form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
@@ -169,7 +169,7 @@ def index(request: Request, system: str = "", model: str = "", identity: str = "
     with closing(ledger.connect(LEDGER_DB)) as conn:
         unknown, rows = writer_rows(writers, ledger.activity(conn))
         context = {"unknown": unknown, "writers": rows, "filters": filters, "loc": LOC,
-                   "writes": ledger.latest_writes(conn, **filters), "options": ledger.filter_options(conn),
+                   "writes": ledger.latest_writes(conn, **filters), "options": ledger.filter_options(conn, **filters),
                    "findings": rules.rank(with_triage(ledger.list_findings(conn), ledger.latest_triage(conn))),
                    "last_check": ledger.get_cursor(conn, "check:last"), "register_error": problem,
                    "triage_on": CLAUDE is not None, "cost": ledger.last_run_cost(conn)}
@@ -191,6 +191,11 @@ def check_now(request: Request):
 @pages.get("/style.css")
 def stylesheet():
     return FileResponse(HERE / "static" / "style.css", media_type="text/css")
+
+
+@pages.get("/page.js")
+def script():
+    return FileResponse(HERE / "static" / "page.js", media_type="text/javascript")
 
 
 app.include_router(pages)

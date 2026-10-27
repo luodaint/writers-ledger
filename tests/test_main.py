@@ -101,7 +101,7 @@ def test_security_headers_on_every_response(client):
     for response in (client.get("/", auth=AUTH), client.get("/healthz"), client.get("/")):
         csp = response.headers["content-security-policy"]
         assert "default-src 'none'" in csp and "frame-ancestors 'none'" in csp
-        assert "script-src" not in csp
+        assert "script-src 'self';" in csp and "unsafe" not in csp  # our own file only, never inline code
         assert response.headers["x-content-type-options"] == "nosniff"
 
 
@@ -118,6 +118,22 @@ def test_stylesheet_is_served(client):
     response = client.get("/style.css", auth=AUTH)
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/css")
+
+
+def test_script_is_served_behind_the_login(client):
+    assert client.get("/page.js").status_code == 401
+    response = client.get("/page.js", auth=AUTH)
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/javascript")  # nosniff refuses any other type
+
+
+def test_page_has_no_inline_script(client):
+    page = client.get("/", auth=AUTH).text
+    assert page.count("<script") == page.count('<script src="/page.js" defer></script>') == 1
+
+
+def test_run_check_now_says_it_is_running(client):
+    assert 'data-busy="Checking…"' in client.get("/", auth=AUTH).text
 
 
 def test_register_text_is_escaped(monkeypatch, tmp_path):
@@ -165,6 +181,39 @@ def test_ledger_filters_by_query_string(client, db_path):
     page = client.get("/?system=shopify", auth=AUTH).text
     assert "Product/9" in page
     assert "AL01-36" not in page
+
+
+def test_ledger_shows_the_system_of_each_write(client, db_path):
+    seen(db_path)
+    seen(db_path, system="shopify", model="order", record_ref="gid://shopify/Order/3", identity="Online Store")
+    page = client.get("/", auth=AUTH).text
+    assert '<th>System</th>' in page
+    assert 'href="?system=odoo#ledger">Odoo</a>' in page
+    assert 'href="?system=shopify#ledger">Shopify</a>' in page
+
+
+def test_a_click_on_a_write_filters_by_it_and_keeps_the_other_filters(client, db_path):
+    seen(db_path, system="shopify", model="order", record_ref="gid://shopify/Order/3", identity="Online Store")
+    page = client.get("/?system=shopify", auth=AUTH).text
+    assert 'href="?identity=Online+Store&amp;system=shopify#ledger"' in page
+    assert 'href="?model=order&amp;system=shopify#ledger"' in page
+
+
+def test_filter_lists_only_what_the_other_filters_leave_with_counts(client, db_path):
+    seen(db_path)
+    seen(db_path, record_ref="8")
+    seen(db_path, system="shopify", model="product", record_ref="gid://shopify/Product/9", identity="pricing-tool")
+    page = client.get("/?system=shopify", auth=AUTH).text
+    assert '<option value="product">product (1)</option>' in page
+    assert '<option value="stock.quant"' not in page
+    assert '<option value="odoo">odoo (2)</option>' in page  # the system list itself stays whole
+
+
+def test_a_filter_that_matches_nothing_keeps_its_choice(client, db_path):
+    seen(db_path)
+    page = client.get("/?system=shopify&model=stock.quant", auth=AUTH).text
+    assert '<option value="stock.quant" selected>stock.quant (0)</option>' in page
+    assert "No writes recorded yet for this filter" in page
 
 
 def test_odd_filter_values_are_harmless(client, db_path):
