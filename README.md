@@ -163,6 +163,11 @@ folder where Dokploy checked out the repo:
   Desktop and OrbStack (macOS) every save shows up. On Linux, an editor that saves
   by replacing the file (vim does by default) leaves the container on the old
   copy: run `docker compose -f docker-compose.fake.yml restart app` after saving.
+- Two Shopify stock updates for the same SKU and location within the same second
+  are stored once, because the ledger tells writes apart by record, second and
+  identity, and Shopify stock is always `unattributed`. The ledger can then keep
+  the older level and report drift that isn't there. Webhooks also carry no
+  sub-second order, so the fix is to read the current level back from Shopify.
 - Each check reads every stock level the ledger ever stored, because drift needs the
   newest one however old it is. That takes about 20 ms for a few thousand writes.
   After months of live webhooks, keep the newest level per SKU and location in a
