@@ -8,9 +8,9 @@
   <script src="/page.js" defer></script>
 </head>
 <body>
-{% macro when(value) %}{% if value %}{{ value[:16] | replace("T", " ") }} UTC{% else %}never{% endif %}{% endmacro %}
+{% macro when(value, length=16) %}{% if value %}{{ value[:length] | replace("T", " ") }} UTC{% else %}never{% endif %}{% endmacro %}
 {# A link to the ledger filtered by one more value, keeping the filters already set. #}
-{% macro only(name, value) %}?{{ dict(filters, **{name: value}) | dictsort | selectattr(1) | list | urlencode }}#ledger{% endmacro %}
+{% macro only(name, value) %}?{{ dict(filters, **{name: value}) | dictsort | selectattr(1) | urlencode }}#ledger{% endmacro %}
 {% macro shown(value) %}{% if value is float and value == value | int %}{{ value | int }}{% elif value is iterable and value is not string %}{{ value | join(", ") }}{% else %}{{ value }}{% endif %}{% endmacro %}
 <header>
   <h1>Writers Ledger</h1>
@@ -37,7 +37,7 @@
     <div class="section-head">
       <h2>Findings</h2>
       <form method="post" action="/check">
-        {% if last_check %}<span class="muted">Last check {{ last_check[11:19] }} UTC</span>{% endif %}
+        {% if last_check %}<span class="muted">Last check {{ when(last_check, 19) }}</span>{% endif %}
         <button type="submit" data-busy="Checking…">Run check now</button>
       </form>
     </div>
@@ -145,11 +145,10 @@
     <p class="hint">The latest 200 writes seen in Odoo and Shopify. Click a system, writer or model to filter by it.</p>
     <form class="filters" method="get" action="/#ledger">
       {% for name, label in [("system", "System"), ("model", "What changed"), ("identity", "Who")] %}
-      {% set values = options[name] | map("first") | list %}
       <label>{{ label }}
         <select name="{{ name }}">
           <option value="">All</option>
-          {% if filters[name] and filters[name] not in values %}
+          {% if filters[name] and filters[name] not in options[name] | map("first") %}
           <option value="{{ filters[name] }}" selected>{{ filters[name] }} (0)</option>
           {% endif %}
           {% for value, count in options[name] %}
@@ -172,10 +171,10 @@
           <tr>
             <td class="nowrap">{{ when(w.written_at) }}</td>
             <td><a class="badge system" href="{{ only("system", w.system) }}">{{ w.system | capitalize }}</a></td>
-            <td><a class="pick{% if (w.system, w.identity) in unregistered %} badge red{% elif w.identity == "unattributed" %} badge amber{% endif %}"
+            <td><a{% if (w.system, w.identity) in unregistered %} class="badge red"{% elif w.identity == "unattributed" %} class="badge amber"{% endif %}
                    href="{{ only("identity", w.identity) }}">{{ w.identity }}</a></td>
             <td>{{ "created" if w.action == "create" else "changed" }}</td>
-            <td><a class="pick" href="{{ only("model", w.model) }}"><code>{{ w.model }}</code></a><div class="ref">{{ w.record_ref | replace("gid://shopify/", "") }}</div></td>
+            <td><a href="{{ only("model", w.model) }}"><code>{{ w.model }}</code></a><div class="ref">{{ w.record_ref | replace("gid://shopify/", "") }}</div></td>
             <td class="details">{% for key, value in w.payload.items() %}<span>{{ key }}: <strong>{{ shown(value) }}</strong></span>{% endfor %}</td>
           </tr>
         {% endfor %}

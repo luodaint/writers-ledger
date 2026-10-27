@@ -77,3 +77,24 @@ where it got it wrong, what I changed by hand.
   - **The fix:** before an entry is shown, code checks that every scope in it is the one changed or one the writer already has, and every identity is the writer's own. Otherwise the card falls back to the rule's advice. The card now labels Claude's text, so the fix is checked before pasting.
   - **Cost:** 13 lines, which takes app code to 789.
 - **Changed by hand:** nothing.
+
+## Between phases: ledger filters and docs
+
+- **Asked:**
+  - a System column in the ledger, and filters that react;
+  - a sign that **Run check now** is running;
+  - three ways to test with other data in the README;
+  - documentation in several pages.
+- **Done:**
+  - each filter lists only what the other filters leave, with counts, and applies on change; a click on a row's system, writer or model filters by it;
+  - the button says "Checking…" while it runs. One same-origin script does both, and the page still works without it;
+  - eight pages in `docs/`. The README's long reference sections moved there.
+- **Got wrong:**
+  - **The testing options I first gave in chat said a second `make traffic` adds to what's there. It crashed.** Odoo's scheduler deletes a stock quant that reaches zero, and the traffic assumed every quant still existed. Fixed test-first, and checked by playing the traffic three times on one stack.
+  - **I expected a price edit in Odoo's product form to stay invisible**, because the collector watches variants, not templates. Trying it in the real UI showed Odoo stamps all six sizes, so the option was kept as written.
+  - **The first browser check of the busy button read the page after its reload**, so it reported a failure that wasn't there.
+- **`/simplify` changed:**
+  - the traffic's write-or-create branch became one call, because Odoo 19 already upserts a quant in inventory mode;
+  - a dead class, two duplicate tests, and a check time that had lost its date.
+  - **Skipped:** building the row links in Python and two new SQLite indexes. Each costs app code lines, for gains only on a ledger far larger than the demo. App code is 801 lines.
+- **Changed by hand:** nothing.

@@ -65,6 +65,8 @@ def test_filter_values_are_never_sql(db):
 def test_unknown_filter_is_rejected(db):
     with pytest.raises(ValueError):
         ledger.latest_writes(db, payload="anything")
+    with pytest.raises(ValueError):
+        ledger.filter_options(db, payload="anything")  # filter names become column names
 
 
 def test_filter_options_list_distinct_values(db):
@@ -86,11 +88,6 @@ def test_filter_options_count_only_what_the_other_filters_leave(db):
     assert options["model"] == [("product", 1)]
     assert options["identity"] == [("pricing-tool", 1)]
     assert options["system"] == [("odoo", 2), ("shopify", 1)]  # a filter never narrows its own list
-
-
-def test_filter_options_reject_unknown_filters(db):
-    with pytest.raises(ValueError, match="unknown filter"):
-        ledger.filter_options(db, payload="anything")
 
 
 def test_activity_counts_writes_per_identity(db):

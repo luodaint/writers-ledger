@@ -97,7 +97,7 @@ def filter_options(conn, **filters) -> dict[str, list[tuple[str, int]]]:
     """Each filter's values and counts under the other filters: a filter never narrows its own list."""
     options = {}
     for k in FILTERS:
-        where, values = matching({other: v for other, v in filters.items() if other != k})
+        where, values = matching(filters | {k: ""})
         options[k] = [tuple(r) for r in conn.execute(f"SELECT {k}, count(*) FROM writes{where} GROUP BY 1 ORDER BY 1",
                                                      values)]
     return options

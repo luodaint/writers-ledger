@@ -14,5 +14,5 @@ for (const button of document.querySelectorAll("button[data-busy]")) {
   });
 }
 
-// Coming back with the browser's Back button can restore a page still saying "Checking…".
+// The Back button can restore an out-of-date copy of the page, even one still saying "Checking…".
 addEventListener("pageshow", (event) => event.persisted && location.reload());
