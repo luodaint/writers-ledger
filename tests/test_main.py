@@ -7,6 +7,29 @@ from app import ledger
 from app.register import RegisterError
 
 AUTH = ("reviewer", "a-long-test-password")
+# The tests' own register: writers.yaml as shipped. The demo has you edit the real one.
+REGISTER = """
+- id: shopify-odoo-sync
+  owner: backend
+  purpose: Creates sale orders in Odoo from Shopify orders
+  identity: { odoo_user: sync@alohas.test, shopify_app: order-sync }
+  may_write: [odoo:sale.order, odoo:res.partner]
+- id: stock-cron
+  owner: sysadmin
+  purpose: Pushes Odoo stock levels to Shopify locations
+  identity: { odoo_user: stock@alohas.test, shopify_app: stock-sync }
+  may_write: [odoo:stock.quant, shopify:inventory_level]
+- id: shopify-storefront
+  owner: ecommerce
+  purpose: Customers' own orders on the online store
+  identity: { shopify_app: Online Store }
+  may_write: [shopify:order]
+- id: pmo-pricing-script
+  owner: ""
+  purpose: Bulk-updates product metafields for drops
+  identity: { shopify_app: pricing-tool }
+  may_write: [shopify:product]
+"""
 PUBLIC = {"/healthz", "/webhooks/shopify"}
 
 
@@ -27,8 +50,8 @@ def db_path(tmp_path):
 
 
 @pytest.fixture
-def main(monkeypatch, db_path):
-    return start(monkeypatch, LEDGER_DB=str(db_path))
+def main(monkeypatch, db_path, tmp_path):
+    return start(monkeypatch, LEDGER_DB=str(db_path), REGISTER_PATH=str(register_file(tmp_path)))
 
 
 def seen(db_path, **over):
@@ -185,3 +208,90 @@ def test_a_writer_named_unattributed_still_shows_in_red(client, db_path):
     writers = page[page.index('id="writers"'):page.index('id="ledger"')]
     assert "Not in the register" in writers
     assert "did not say who" not in writers
+
+
+# --- checks and findings -------------------------------------------------------------
+
+SAME_ORIGIN = {"Sec-Fetch-Site": "same-origin", "Origin": "http://testserver"}
+
+
+def register_file(tmp_path, extra=""):
+    path = tmp_path / "writers.yaml"
+    path.write_text(REGISTER + extra)
+    return path
+
+
+ADMIN_CRON = """
+- id: forgotten-cron
+  owner: sysadmin
+  purpose: Nightly stock reset in Milan, found by the ledger
+  identity: { odoo_user: admin }
+  may_write: [odoo:stock.quant]
+"""
+
+
+@pytest.mark.parametrize("headers", [{"Sec-Fetch-Site": "cross-site"}, {"Sec-Fetch-Site": "same-site"},
+                                     {"Origin": "https://evil.example"}, {"Origin": "null"}])
+def test_run_check_now_refuses_posts_from_other_sites(client, headers):
+    assert client.post("/check", auth=AUTH, headers=headers, follow_redirects=False).status_code == 403
+
+
+def test_our_own_form_posts_keep_their_origin(client):
+    """With Referrer-Policy no-referrer, browsers send `Origin: null` on every form post,
+    so the page's own Run check now button was refused (found in a real browser)."""
+    policy = client.get("/", auth=AUTH).headers["referrer-policy"]
+    assert policy == "same-origin"  # the origin for our own posts, nothing at all for other sites
+
+
+@pytest.mark.parametrize("headers", [SAME_ORIGIN, {}])  # {}: curl or `make check`, not a browser
+def test_run_check_now_runs_a_check_and_goes_back_to_the_findings(client, headers):
+    response = client.post("/check", auth=AUTH, headers=headers, follow_redirects=False)
+    assert response.status_code == 303
+    assert response.headers["location"] == "/#findings"
+
+
+def test_a_check_turns_an_unknown_writer_into_a_card(client, db_path):
+    seen(db_path, identity="admin")
+    client.post("/check", auth=AUTH, headers=SAME_ORIGIN)
+    page = client.get("/", auth=AUTH).text
+    findings = page[page.index('id="findings"'):page.index('id="writers"')]
+    assert 'class="finding red"' in findings
+    assert "admin changed odoo:stock.quant once" in findings
+    assert "Last check: never" not in page
+
+
+def test_unattributed_writes_are_a_note_not_a_card(client, db_path):
+    seen(db_path, system="shopify", model="inventory_level", identity="unattributed",
+         payload={"sku": "AL01-36", "location": "Milan", "available": 4})
+    client.post("/check", auth=AUTH, headers=SAME_ORIGIN)
+    page = client.get("/", auth=AUTH).text
+    findings = page[page.index('id="findings"'):page.index('id="writers"')]
+    assert 'class="finding' not in findings
+    assert 'class="note"' in findings and "without saying who" in findings
+
+
+def test_editing_the_register_resolves_the_finding_without_a_restart(monkeypatch, tmp_path, db_path):
+    path = register_file(tmp_path)
+    main = start(monkeypatch, LEDGER_DB=str(db_path), REGISTER_PATH=str(path))
+    seen(db_path, identity="admin")
+    main.run_check()
+    path.write_text(path.read_text() + ADMIN_CRON)
+    main.run_check()
+    [finding] = ledger.list_findings(ledger.connect(db_path))
+    assert (finding["rule"], finding["status"]) == ("unknown_writer", "resolved")
+    page = TestClient(main.app).get("/", auth=AUTH).text
+    assert "forgotten-cron" in page and "Resolved" in page
+
+
+def test_a_broken_register_edit_pauses_checks_and_keeps_the_findings(monkeypatch, tmp_path, db_path):
+    path = register_file(tmp_path)
+    main = start(monkeypatch, LEDGER_DB=str(db_path), REGISTER_PATH=str(path))
+    seen(db_path, identity="admin")
+    main.run_check()
+    path.write_text("- id: half-saved\n  owner: x\n")
+    assert main.run_check() is None
+    [finding] = ledger.list_findings(ledger.connect(db_path))
+    assert finding["status"] == "open"
+    page = TestClient(main.app).get("/", auth=AUTH).text
+    assert "writers.yaml has a problem" in page and "half-saved" in page
+    assert "stock-cron" in page  # the last good register still shows

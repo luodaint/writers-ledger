@@ -38,3 +38,10 @@ where it got it wrong, what I changed by hand.
 - **Done:** CI runs `make lint test`, then the offline demo end to end (`make up seed traffic smoke`). `main` has a ruleset with no bypass: PR, both checks and CodeQL required, squash merge only. Secret scanning with push protection, Dependabot for the action pins, private vulnerability reporting. Ruff added as a dev dependency for "cleanup".
 - **Got wrong:** the first `sim/smoke.py` compared `sqlite3.Row` objects to tuples, so it could never pass; caught by testing it against a hand-built ledger before CI ran it. `make traffic` needed `-T` to run without a terminal.
 - **Changed by hand:** nothing.
+
+## Phase 2: rules
+
+- **Asked:** the four rules, deduplication, the planted incidents. Owner's decisions: register the storefront as a writer, show Shopify's unattributed stock changes as a grey note, keep app names as Shopify identities. Run `/simplify` when done.
+- **Done:** `rules.py` is pure and was written tests first (21 tests). A finding is stored per fingerprint; its count is recomputed by each check and never summed, and a check that no longer finds it resolves it. Checks run after every Odoo poll, on a "Run check now" button and with `make check`. Each check re-reads `writers.yaml`, and a broken edit pauses checks instead of resolving everything. `sim/traffic.py` plants the four incidents, and `make smoke` (in CI) requires exactly those four.
+- **Got wrong:** summaries said "1 times". A drift test fed writes oldest-first, so removing the sort went unnoticed; mutation testing caught it. `Referrer-Policy: no-referrer` makes Chrome send `Origin: null` on form posts, so the button was refused in a real browser while the unit tests passed. Tests read the repo's `writers.yaml`, so following the README demo would have broken `make test`; the `/simplify` review caught it. App code is 617 lines against a ~560 estimate.
+- **Changed by hand:** nothing.

@@ -78,6 +78,7 @@ services:
       ODOO_URL: http://odoo:8069
       ODOO_DB: ${ODOO_DB:-writers}
       POLL_SECONDS: ${POLL_SECONDS:-30}
+      DRIFT_SETTLE_MINUTES: ${DRIFT_SETTLE_MINUTES:-10}
       LEDGER_DB: /data/ledger.db
       # The observer app in your dev store. Without them, webhooks are refused (401).
       SHOPIFY_STORE: ${SHOPIFY_STORE:-}

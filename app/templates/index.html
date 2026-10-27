@@ -13,10 +13,63 @@
   <p class="lede">Every change made to Odoo and Shopify, who made it, and whether they were allowed to.</p>
 </header>
 <main>
+  {% set titles = {
+    "unknown_writer": "Someone who is not in the register is writing",
+    "out_of_scope": "A writer is changing something it isn't allowed to",
+    "ownerless_writer": "A writer that nobody owns is active",
+    "stock_drift": "Odoo and Shopify disagree about stock",
+  } %}
+  {% set fixes = {
+    "unknown_writer": "Find out who uses this login. Then add it to writers.yaml with an owner, or revoke its key.",
+    "out_of_scope": "Decide whether it should write there. If yes, add it to its may_write in writers.yaml; if not, stop it.",
+    "ownerless_writer": "Give it an owner in writers.yaml, or switch it off.",
+    "stock_drift": "Count the stock, correct the side that is wrong, then check why the stock sync missed it.",
+  } %}
+  {% set open = findings | selectattr("status", "eq", "open") | list %}
+  {% set cards = open | rejectattr("severity", "eq", "info") | list %}
+  {% set notes = open | selectattr("severity", "eq", "info") | list %}
+  {% set resolved = findings | selectattr("status", "eq", "resolved") | list %}
   <section id="findings">
-    <h2>Findings</h2>
-    <p class="hint">Things that need a person's attention, most urgent first.</p>
-    <p class="empty">No findings yet. The first check runs once the ledger has writes.</p>
+    <div class="section-head">
+      <h2>Findings</h2>
+      <form method="post" action="/check"><button type="submit">Run check now</button></form>
+    </div>
+    <p class="hint">Things that need a person's attention, most urgent first. The check runs every few seconds.</p>
+    {% if register_error %}
+    <div class="alert">
+      <strong>writers.yaml has a problem, so checks are paused.</strong> The page shows the last version that worked.
+      <pre>{{ register_error }}</pre>
+    </div>
+    {% endif %}
+    {% for f in cards %}{% set tone = "red" if f.severity in ("critical", "high") else "amber" %}
+    <article class="finding {{ tone }}">
+      <div class="finding-head">
+        <span class="badge {{ tone }}">{{ f.severity | capitalize }}</span>
+        <h3>{{ titles[f.rule] }}</h3>
+      </div>
+      <p>{{ f.summary }}</p>
+      <p class="fix"><strong>Suggested fix:</strong> {{ fixes[f.rule] }}</p>
+      <dl>
+        <div><dt>Owner</dt><dd>{{ f.owner or "nobody" }}{% if f.writer_id %} ({{ f.writer_id }}){% endif %}</dd></div>
+        {% if f.rule != "stock_drift" %}<div><dt>Writes</dt><dd>{{ f.count }}</dd></div>{% endif %}
+        <div><dt>First seen</dt><dd>{{ when(f.first_seen) }}</dd></div>
+        <div><dt>Last seen</dt><dd>{{ when(f.last_seen) }}</dd></div>
+      </dl>
+    </article>
+    {% else %}
+    <p class="empty">{% if last_check %}No findings: every write in the last 7 days came from a registered writer, within what it may change, and stock matches.{% else %}No check has run yet. It runs a few seconds after the app starts, or press <em>Run check now</em>.{% endif %}</p>
+    {% endfor %}
+    {% for n in notes %}
+    <p class="note">{{ n.summary }} {{ n.system | capitalize }} doesn't tell us which app made these changes, so they can't be checked against the register.</p>
+    {% endfor %}
+    {% if resolved %}
+    <details class="resolved">
+      <summary>Resolved ({{ resolved | length }})</summary>
+      <ul>
+        {% for f in resolved %}<li><strong>{{ titles.get(f.rule, f.rule) }}:</strong> {{ f.summary }} <span class="muted">Resolved {{ when(f.resolved_at) }}.</span></li>{% endfor %}
+      </ul>
+    </details>
+    {% endif %}
   </section>
 
   <section id="writers">
@@ -115,7 +168,7 @@
   </section>
 </main>
 <footer>
-  Last check: never · Cost of last check: — · {{ loc }} lines of app code
+  Last check: {{ when(last_check) }} · Cost of last check: — · {{ loc }} lines of app code
 </footer>
 </body>
 </html>
