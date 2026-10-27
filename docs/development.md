@@ -7,7 +7,8 @@ The rules for coding agents, which people follow too, are in
 
 ```sh
 make test    # a Python 3.12 venv via uv, then pytest
-make lint    # ruff, the same check as CI
+make lint    # ruff: lint and format check, the same as CI
+make fmt     # fix what ruff can, then format the code
 make smoke   # after `make up seed traffic`: the whole demo, end to end
 make eval    # Claude's triage on evals/cases.yaml (needs ANTHROPIC_API_KEY in .env; costs cents)
 make loc     # app code line count
@@ -42,6 +43,8 @@ make help    # all targets
   I/O lives in the adapters, and `app/main.py` is the only module that imports both.
 - Domain values are plain dicts or frozen dataclasses. No repositories, service
   layers, base classes with one child or plugin systems.
+- **Style is ruff's**: lines up to 175 columns, formatted by `ruff format`. Run
+  `make fmt` before you push.
 - Use the words in [What it does](overview.md#words), with those meanings, in code,
   tests, the page and docs.
 - **Size budget:** about 700 lines of app code in `app/`, counted by `make loc`.
@@ -69,7 +72,8 @@ squash-merges.
 CI ([`.github/workflows/ci.yml`](../.github/workflows/ci.yml)) runs on every pull
 request and every push to `main`:
 
-1. **Lint and tests**: `make lint`, `make test`, the line count in the job summary,
+1. **Lint and tests**: `make lint` (ruff's lint and format check; `make fmt` fixes
+   a failure), `make test`, the line count in the job summary,
    and a check that `docker-compose.yml` is valid.
 2. **Offline demo, end to end**: `make up seed traffic smoke` on a fresh runner,
    with the logs dumped if it fails.
