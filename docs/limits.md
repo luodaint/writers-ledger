@@ -20,7 +20,8 @@ Know these before you trust a count.
 - **A record seen twice in the same second keeps its latest state.** A stock count
   is two requests, set then apply, often within one second. A poll between them sees
   the old quantity; the re-read after the apply replaces it, so the ledger never
-  keeps a quantity Odoo has already moved past.
+  keeps a quantity Odoo has already moved past. Only Odoo rows are updated this way:
+  one collector reads Odoo in order, so a later read is a newer state.
 - **A price change counts six times.** Odoo keeps a shoe's price on the shoe, so
   changing it updates all six of its sizes, and the ledger counts what Odoo records.
 
@@ -40,9 +41,10 @@ Know these before you trust a count.
 - **Two stock updates in the same second are one write.** The ledger tells writes
   apart by record, second and identity, and Shopify stock is always `unattributed`,
   so two Shopify updates of the same SKU and location within a second become one
-  write, holding the last one received. Webhooks carry no sub-second order: if they
-  arrive out of order, the ledger holds the older level and can report drift that
-  isn't there. The fix is to read the current level back from Shopify.
+  write, holding the first one received. A later delivery never rewrites it,
+  because webhooks carry no sub-second order and a signed body can be replayed. The
+  ledger can then hold the older level and report drift that isn't there; the fix
+  is to read the current level back from Shopify.
 
 ## The ledger and the check
 

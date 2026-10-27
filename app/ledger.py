@@ -68,13 +68,14 @@ def connect(path) -> sqlite3.Connection:
 
 
 def record_write(conn, write: dict) -> bool:
-    """Store a write; False if the ledger already had it (same record, second and writer, same state).
-    Seen again with a newer state, say a stock count applied within the second it was set, it keeps the newer."""
+    """Store a write; False if the ledger already had it (same record, second and writer).
+    One collector reads Odoo in order, so an Odoo record read again in the same second with a new state,
+    say a stock count applied within the second it was set, keeps the newer. Shopify's first delivery stays."""
     with conn:
         cur = conn.execute(
             "INSERT INTO writes (seen_at, written_at, system, model, record_ref, identity, action, payload)"
             " VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (system, model, record_ref, written_at, identity)"
-            " DO UPDATE SET payload = excluded.payload WHERE payload != excluded.payload",
+            " DO UPDATE SET payload = excluded.payload WHERE system = 'odoo' AND payload != excluded.payload",
             (now(), write["written_at"], write["system"], write["model"], write["record_ref"],
              write["identity"], write["action"], json.dumps(write["payload"], sort_keys=True)),
         )

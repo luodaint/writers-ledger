@@ -44,6 +44,15 @@ def test_a_record_seen_again_in_the_same_second_keeps_its_latest_state(db):
     assert row["payload"]["quantity"] == 12
 
 
+def test_a_shopify_write_is_never_rewritten(db):
+    # Webhooks arrive in no set order and a signed body can be replayed: arriving later proves nothing.
+    shopify = {"system": "shopify", "model": "inventory_level", "identity": "unattributed"}
+    assert ledger.record_write(db, write(**shopify, payload={"sku": "AL03-41", "available": 12})) is True
+    assert ledger.record_write(db, write(**shopify, payload={"sku": "AL03-41", "available": 9})) is False
+    [row] = ledger.latest_writes(db)
+    assert row["payload"]["available"] == 12
+
+
 def test_two_writers_on_the_same_record_in_the_same_second_are_both_kept(db):
     assert ledger.record_write(db, write(identity="stock@alohas.test")) is True
     assert ledger.record_write(db, write(identity="admin")) is True
