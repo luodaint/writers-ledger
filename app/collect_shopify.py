@@ -117,7 +117,7 @@ def lookup(topic: str, gid: str, changed_at: str) -> tuple[str, dict]:
 def record(db_path, topic: str, payload: dict) -> None:
     try:
         identity, details = lookup(topic, payload["admin_graphql_api_id"], payload["updated_at"])
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - a write we can't attribute is still a write
         log.warning("Shopify lookup failed for %s, storing it as unattributed: %s: %s", topic, type(e).__name__, e)
         identity, details = ledger.UNATTRIBUTED, {}
     with closing(ledger.connect(db_path)) as conn:

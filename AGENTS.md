@@ -11,7 +11,7 @@
   standard library, Odoo 19 Community (External JSON-2 API), Shopify Admin API +
   webhooks, Anthropic SDK.
 - Dependencies: runtime `fastapi`, `uvicorn`, `jinja2`, `httpx`, `pyyaml`,
-  `anthropic`; dev `pytest`. Ask the owner before adding anything else. Pin exact
+  `anthropic`; dev `pytest`, `ruff`. Ask the owner before adding anything else. Pin exact
   versions.
 - Size budget: at most 500 lines of app code in `app/` (excluding templates,
   `sim/`, `evals/`, `tests/`). `make loc` reports it; report the count at the end
@@ -89,16 +89,20 @@ Module boundaries:
 
 ## Commands
 
-- Tests: `make test`
+- Tests: `make test`. Lint: `make lint` (ruff, configured in `pyproject.toml`).
 - Offline stack: `docker compose -f docker-compose.fake.yml up`
-- Other targets (`up`, `seed`, `traffic`, `check`, `eval`, `reset`, `loc`) are
-  added in the phase that needs them; `make help` lists what exists.
+- End to end: `make up seed traffic smoke`, exactly what CI runs.
+- Other targets (`check`, `eval`, `reset`) are added in the phase that needs
+  them; `make help` lists what exists.
 
 ## Workflow and git
 
 - Work in the phases of `docs/brief.md`. Propose a short plan before each phase
   and wait for the owner's OK.
-- One commit per phase with a clear message, on the `development` branch.
+- Every change is a branch and a pull request into `main`, one PR per phase.
+  Nobody pushes to `main`: a ruleset requires the PR, the `Lint and tests` and
+  `Offline demo, end to end` checks, and CodeQL. The owner reviews and
+  squash-merges; agents never merge their own PRs.
 - After each phase, append 3–5 lines to `docs/ai-log.md`: what was asked, where
   the agent got it wrong, what was changed by hand.
 - Check the current Odoo 19, Shopify and Anthropic docs before coding against

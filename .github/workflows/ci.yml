@@ -1,0 +1,58 @@
+# Every pull request and every push to main. The job names are the required checks
+# in the `main` ruleset: rename a job and the ruleset must follow.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  checks:
+    name: Lint and tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: "0.13.0"
+      - run: make lint
+      - run: make test
+      - name: App code size
+        run: echo "App code in app/ is $(make -s loc) lines (budget about 500-600)." >> "$GITHUB_STEP_SUMMARY"
+      - name: The live compose file is valid
+        run: docker compose -f docker-compose.yml config --quiet
+        env:  # placeholders: the live file refuses to start without them
+          APP_USER: ci
+          APP_PASSWORD: ci-placeholder-not-a-secret
+          POSTGRES_PASSWORD: ci-placeholder-not-a-secret
+          ODOO_ADMIN_PASSWORD: ci-placeholder-not-a-secret
+
+  offline-demo:
+    name: Offline demo, end to end
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: make up
+      - run: make seed
+      - run: make traffic
+      - run: make smoke
+      - name: Logs
+        if: failure()
+        run: docker compose -f docker-compose.fake.yml logs --no-color --tail 200
+      - name: Clean up
+        if: always()
+        run: docker compose -f docker-compose.fake.yml --profile tools down --volumes --remove-orphans

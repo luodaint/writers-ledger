@@ -1,0 +1,10 @@
+# Keeps the pinned action SHAs current. Python packages are pinned with hashes by
+# `uv pip compile --exclude-newer` (see requirements*.txt) and are updated by hand.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 14  # only releases at least two weeks old

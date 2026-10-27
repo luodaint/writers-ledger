@@ -14,7 +14,7 @@ import os
 import sys
 
 sys.path.insert(0, "/opt/writers-ledger")
-from sim import catalog  # noqa: E402
+from sim import catalog
 
 COLLECTOR_FILE = "/secrets/collector/odoo-key.json"
 WRITERS_FILE = "/secrets/writers/odoo-keys.json"

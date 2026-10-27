@@ -20,7 +20,7 @@ import re
 import secrets
 import threading
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs
 
@@ -60,14 +60,15 @@ def save() -> None:
 
 def load() -> None:
     if os.path.exists(STATE_FILE):
-        state = json.load(open(STATE_FILE))
+        with open(STATE_FILE) as f:
+            state = json.load(f)
         LEVELS.update({(sku, loc): q for sku, loc, q in state["levels"]})
         for name, store in [("tokens", TOKENS), ("order_apps", ORDER_APPS), ("events", EVENTS), ("next", NEXT)]:
             store.update(state[name])
 
 
 def now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def num(gid: str) -> int:
