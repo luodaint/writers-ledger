@@ -2,12 +2,29 @@
 
 Triage only ever sends an allowlisted summary, never payloads; this is the second layer.
 """
+
 import re
 
 EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 PHONE = re.compile(r"\+\d[\d ()-]{6,}\d|\(?\b\d{3}\)?[ .-]?\d{3}[ .-]\d{3,4}\b")
-PERSONAL = {"name", "first_name", "last_name", "customer", "email", "phone", "mobile", "address", "address1",
-            "address2", "street", "street2", "city", "zip", "shipping_address", "billing_address"}
+PERSONAL = {
+    "name",
+    "first_name",
+    "last_name",
+    "customer",
+    "email",
+    "phone",
+    "mobile",
+    "address",
+    "address1",
+    "address2",
+    "street",
+    "street2",
+    "city",
+    "zip",
+    "shipping_address",
+    "billing_address",
+}
 
 
 def redact(value):

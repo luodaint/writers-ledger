@@ -10,6 +10,7 @@ Odoo writes go through the JSON-2 API with each writer's own key, so Odoo record
 who did what. Shopify writes go through the Admin API as each writer's own app:
 the fake Shopify offline, your dev store live. Days are compressed into seconds.
 """
+
 import json
 import os
 import random
@@ -23,8 +24,12 @@ KEYS_FILE = os.environ.get("ODOO_KEYS_FILE", "/secrets/odoo-keys.json")
 rng = random.Random(int(os.environ.get("TRAFFIC_SEED", "7")))
 DRIFT = ("AL05-38", "Barcelona")  # incident 4: the SKU and shop whose stock push goes wrong
 # Made-up customers, so the redaction in front of the LLM has something to remove.
-CUSTOMERS = [("Laura Pérez", "laura.perez@example.com"), ("Marco Rossi", "marco.rossi@example.com"),
-             ("Ana Vidal", "ana.vidal@example.com"), ("Giulia Bianchi", "giulia.b@example.com")]
+CUSTOMERS = [
+    ("Laura Pérez", "laura.perez@example.com"),
+    ("Marco Rossi", "marco.rossi@example.com"),
+    ("Ana Vidal", "ana.vidal@example.com"),
+    ("Giulia Bianchi", "giulia.b@example.com"),
+]
 
 
 class Odoo:
@@ -34,7 +39,8 @@ class Odoo:
         with open(KEYS_FILE) as f:
             key = json.load(f)[role]["key"]
         self.http = httpx.Client(
-            base_url=os.environ["ODOO_URL"], timeout=30,
+            base_url=os.environ["ODOO_URL"],
+            timeout=30,
             headers={"Authorization": f"bearer {key}", "X-Odoo-Database": os.environ.get("ODOO_DB", "writers")},
         )
 
@@ -59,12 +65,16 @@ def sync_order(odoo: Odoo, products: dict, skus: list[str]) -> None:
 
 def adjust_stock(odoo: Odoo, products: dict, locations: dict, sku: str, location: str) -> int:
     """stock-cron: counts stock in Odoo; returns the new quantity to push to Shopify."""
-    domain = [["product_id", "=", products[sku]], ["location_id", "=", locations[location]]]
-    [quant] = odoo("stock.quant", "search_read", domain=domain, fields=["quantity"])
-    quantity = max(0, int(quant["quantity"]) + rng.choice([-2, -1, 1, 2, 3]))
+    where = {"product_id": products[sku], "location_id": locations[location]}
+    quants = odoo("stock.quant", "search_read", domain=[[k, "=", v] for k, v in where.items()], fields=["quantity"])
+    quantity = max(0, int(quants[0]["quantity"] if quants else 0) + rng.choice([-2, -1, 1, 2, 3]))
     context = {"inventory_mode": True}
-    odoo("stock.quant", "write", ids=[quant["id"]], vals={"inventory_quantity": quantity}, context=context)
-    odoo("stock.quant", "action_apply_inventory", ids=[quant["id"]], context=context)
+    if quants:  # write, not create: Odoo's create upsert sets the count by assignment, which skips a 0
+        ids = [quants[0]["id"]]
+        odoo("stock.quant", "write", ids=ids, vals={"inventory_quantity": quantity}, context=context)
+    else:  # Odoo's scheduler deletes a quant that reached zero; counting stock there makes a new one
+        ids = odoo("stock.quant", "create", vals_list=[where | {"inventory_quantity": quantity}], context=context)
+    odoo("stock.quant", "action_apply_inventory", ids=ids, context=context)
     return quantity
 
 

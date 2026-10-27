@@ -8,8 +8,11 @@ pythonpath = ["."]
 testpaths = ["tests"]
 
 [tool.ruff]
-line-length = 120
+line-length = 175
 extend-exclude = [".agents"]  # the shared toolkit, a submodule with its own checks
+
+[tool.ruff.format]  # `make fmt` formats and fixes; `make lint` and CI only check
+docstring-code-format = true
 
 [tool.ruff.lint.per-file-ignores]
 "sim/seed_odoo.py" = ["F821"]  # runs inside `odoo shell`, which provides `env`

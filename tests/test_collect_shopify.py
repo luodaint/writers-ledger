@@ -12,23 +12,37 @@ from app import collect_shopify, ledger
 
 SECRET = "observer-app-client-secret"
 ORDER = {
-    "id": 820982911946154508, "admin_graphql_api_id": "gid://shopify/Order/820982911946154508",
-    "name": "#1001", "created_at": "2026-10-26T12:00:00+02:00", "updated_at": "2026-10-26T12:00:00+02:00",
-    "app_id": 580111, "source_name": "web", "total_price": "240.00", "currency": "EUR",
-    "financial_status": "paid", "email": "laura.perez@example.com", "phone": "+34600000000",
+    "id": 820982911946154508,
+    "admin_graphql_api_id": "gid://shopify/Order/820982911946154508",
+    "name": "#1001",
+    "created_at": "2026-10-26T12:00:00+02:00",
+    "updated_at": "2026-10-26T12:00:00+02:00",
+    "app_id": 580111,
+    "source_name": "web",
+    "total_price": "240.00",
+    "currency": "EUR",
+    "financial_status": "paid",
+    "email": "laura.perez@example.com",
+    "phone": "+34600000000",
     "customer": {"first_name": "Laura", "last_name": "Pérez", "email": "laura.perez@example.com"},
     "shipping_address": {"address1": "Carrer de Mallorca 1", "city": "Barcelona"},
     "line_items": [{"sku": "AL01-36", "quantity": 1, "price": "120.00", "name": "Rife Sneaker - 36"}],
 }
 LEVEL = {
-    "inventory_item_id": 271878346596884015, "location_id": 24826418, "available": 6,
+    "inventory_item_id": 271878346596884015,
+    "location_id": 24826418,
+    "available": 6,
     "updated_at": "2026-10-26T10:00:00-05:00",
     "admin_graphql_api_id": "gid://shopify/InventoryLevel/24826418?inventory_item_id=271878346596884015",
 }
 PRODUCT = {
-    "id": 788032119674292922, "admin_graphql_api_id": "gid://shopify/Product/788032119674292922",
-    "title": "Rife Sneaker", "status": "active", "handle": "rife-sneaker",
-    "updated_at": "2026-10-26T10:00:00Z", "variants": [{"sku": "AL01-36", "inventory_item_id": 1}],
+    "id": 788032119674292922,
+    "admin_graphql_api_id": "gid://shopify/Product/788032119674292922",
+    "title": "Rife Sneaker",
+    "status": "active",
+    "handle": "rife-sneaker",
+    "updated_at": "2026-10-26T10:00:00Z",
+    "variants": [{"sku": "AL01-36", "inventory_item_id": 1}],
 }
 
 
@@ -37,6 +51,7 @@ def sign(body: bytes, secret=SECRET) -> str:
 
 
 # --- signature -----------------------------------------------------------------
+
 
 def test_valid_signature_is_accepted():
     body = json.dumps(ORDER).encode()
@@ -60,13 +75,17 @@ def test_bad_signatures_are_rejected(case):
 
 # --- payload to write ----------------------------------------------------------
 
+
 def test_order_becomes_a_write_without_customer_data():
     write = collect_shopify.to_write("orders/create", ORDER, "Online Store", {})
     assert write == {
-        "system": "shopify", "model": "order", "record_ref": "gid://shopify/Order/820982911946154508",
-        "identity": "Online Store", "action": "create", "written_at": "2026-10-26T10:00:00Z",
-        "payload": {"name": "#1001", "total_price": "240.00", "currency": "EUR",
-                    "financial_status": "paid", "skus": ["AL01-36"]},
+        "system": "shopify",
+        "model": "order",
+        "record_ref": "gid://shopify/Order/820982911946154508",
+        "identity": "Online Store",
+        "action": "create",
+        "written_at": "2026-10-26T10:00:00Z",
+        "payload": {"name": "#1001", "total_price": "240.00", "currency": "EUR", "financial_status": "paid", "skus": ["AL01-36"]},
     }
     text = json.dumps(write)
     for personal in ("Laura", "Pérez", "laura.perez", "+34600000000", "Mallorca"):
@@ -74,8 +93,7 @@ def test_order_becomes_a_write_without_customer_data():
 
 
 def test_inventory_level_becomes_a_write_with_sku_and_location():
-    write = collect_shopify.to_write("inventory_levels/update", LEVEL, "unattributed",
-                                     {"sku": "AL01-36", "location": "Milan"})
+    write = collect_shopify.to_write("inventory_levels/update", LEVEL, "unattributed", {"sku": "AL01-36", "location": "Milan"})
     assert write["model"] == "inventory_level"
     assert write["action"] == "write"
     assert write["written_at"] == "2026-10-26T15:00:00Z"
@@ -110,15 +128,12 @@ def test_a_new_order_is_attributed_to_the_app_that_created_it():
 def test_an_order_update_is_attributed_by_its_events_not_its_creator():
     edited = {"order": {"events": {"nodes": [event("ops-script")]}}}
     assert collect_shopify.identity_from("orders/updated", edited, CHANGED) == ("ops-script", {})
-    assert collect_shopify.identity_from("orders/updated", {"order": {"events": {"nodes": []}}}, CHANGED) == (
-        "unattributed", {})
+    assert collect_shopify.identity_from("orders/updated", {"order": {"events": {"nodes": []}}}, CHANGED) == ("unattributed", {})
 
 
 def test_product_identity_is_the_app_behind_the_event_of_that_change():
-    assert collect_shopify.identity_from("products/update", product_events(event("pricing-tool")), CHANGED) == (
-        "pricing-tool", {})
-    assert collect_shopify.identity_from("products/update", product_events(event(None)), CHANGED) == (
-        "unattributed", {})
+    assert collect_shopify.identity_from("products/update", product_events(event("pricing-tool")), CHANGED) == ("pricing-tool", {})
+    assert collect_shopify.identity_from("products/update", product_events(event(None)), CHANGED) == ("unattributed", {})
 
 
 def test_an_old_app_event_is_not_blamed_for_a_new_change():
@@ -143,8 +158,7 @@ def test_an_app_named_like_the_sentinel_is_not_mistaken_for_unattributed():
 
 def test_inventory_levels_are_never_attributed_but_get_sku_and_location():
     data = {"inventoryLevel": {"item": {"sku": "AL01-36"}, "location": {"name": "Milan"}}}
-    assert collect_shopify.identity_from("inventory_levels/update", data, CHANGED) == (
-        "unattributed", {"sku": "AL01-36", "location": "Milan"})
+    assert collect_shopify.identity_from("inventory_levels/update", data, CHANGED) == ("unattributed", {"sku": "AL01-36", "location": "Milan"})
 
 
 def test_access_token_comes_from_client_credentials_and_is_reused(monkeypatch):
@@ -166,12 +180,12 @@ def test_access_token_comes_from_client_credentials_and_is_reused(monkeypatch):
         assert collect_shopify.lookup("orders/create", "gid://shopify/Order/1", CHANGED) == ("Online Store", {})
     token_calls = [c for c in calls if c.url.path == "/admin/oauth/access_token"]
     assert len(token_calls) == 1
-    assert dict(httpx.QueryParams(token_calls[0].content.decode())) == {
-        "client_id": "id-1", "client_secret": "secret-1", "grant_type": "client_credentials"}
+    assert dict(httpx.QueryParams(token_calls[0].content.decode())) == {"client_id": "id-1", "client_secret": "secret-1", "grant_type": "client_credentials"}
     assert calls[1].url.path == "/admin/api/2026-10/graphql.json"
 
 
 # --- the endpoint ----------------------------------------------------------------
+
 
 @pytest.fixture
 def app(monkeypatch, tmp_path):
@@ -182,15 +196,19 @@ def app(monkeypatch, tmp_path):
     monkeypatch.setattr(collect_shopify, "WEBHOOK_SECRET", SECRET)
     monkeypatch.setattr(collect_shopify, "lookup", lambda topic, gid, changed_at: ("Online Store", {}))
     import app.main
+
     main = importlib.reload(app.main)
     return main, TestClient(main.app), ledger.connect(tmp_path / "ledger.db")
 
 
 def deliver(client, payload, topic="orders/create", webhook_id="wh-1", signature=None):
     body = json.dumps(payload).encode()
-    headers = {"X-Shopify-Topic": topic, "X-Shopify-Webhook-Id": webhook_id,
-               "X-Shopify-Hmac-Sha256": signature if signature is not None else sign(body),
-               "Content-Type": "application/json"}
+    headers = {
+        "X-Shopify-Topic": topic,
+        "X-Shopify-Webhook-Id": webhook_id,
+        "X-Shopify-Hmac-Sha256": signature if signature is not None else sign(body),
+        "Content-Type": "application/json",
+    }
     return client.post("/webhooks/shopify", content=body, headers=headers)
 
 

@@ -1,4 +1,5 @@
 """The register (writers.yaml): who may write to what, and who owns them."""
+
 import re
 from dataclasses import dataclass
 

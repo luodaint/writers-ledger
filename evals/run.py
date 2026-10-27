@@ -5,6 +5,7 @@ triage.prepare() and rating call, redaction included, and only pays for what it 
 the small model, well under a cent a run. The explanations are tested with a stub and
 read on the page.
 """
+
 import pathlib
 import sys
 
@@ -35,8 +36,10 @@ def main() -> int:
         got = {"severity": rating.get("severity"), "category": rating.get("category")}
         ok = got == case["expect"]
         passed += ok
-        print(f"{'PASS' if ok else 'FAIL'}  {case['name']:<44} {got['severity']}, {got['category']}"
-              + ("" if ok else f"   (expected {case['expect']['severity']}, {case['expect']['category']})"))
+        print(
+            f"{'PASS' if ok else 'FAIL'}  {case['name']:<44} {got['severity']}, {got['category']}"
+            + ("" if ok else f"   (expected {case['expect']['severity']}, {case['expect']['category']})")
+        )
     print(f"\n{passed}/{len(cases)} cases passed. This run cost ${cost:.4f}.")
     return 0 if passed == len(cases) else 1
 

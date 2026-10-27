@@ -57,9 +57,15 @@ def main(monkeypatch, db_path, tmp_path):
 
 
 def seen(db_path, **over):
-    write = {"system": "odoo", "model": "stock.quant", "record_ref": "7", "identity": "stock@alohas.test",
-             "action": "write", "written_at": "2026-10-26T10:00:00Z",
-             "payload": {"sku": "AL01-36", "location": "Milan", "quantity": 4}} | over
+    write = {
+        "system": "odoo",
+        "model": "stock.quant",
+        "record_ref": "7",
+        "identity": "stock@alohas.test",
+        "action": "write",
+        "written_at": "2026-10-26T10:00:00Z",
+        "payload": {"sku": "AL01-36", "location": "Milan", "quantity": 4},
+    } | over
     ledger.record_write(ledger.connect(db_path), write)
 
 
@@ -101,7 +107,7 @@ def test_security_headers_on_every_response(client):
     for response in (client.get("/", auth=AUTH), client.get("/healthz"), client.get("/")):
         csp = response.headers["content-security-policy"]
         assert "default-src 'none'" in csp and "frame-ancestors 'none'" in csp
-        assert "script-src" not in csp
+        assert "script-src 'self';" in csp and "unsafe" not in csp  # our own file only, never inline code
         assert response.headers["x-content-type-options"] == "nosniff"
 
 
@@ -114,18 +120,25 @@ def test_page_shows_the_register(client):
     assert "lines of app code" in page
 
 
-def test_stylesheet_is_served(client):
-    response = client.get("/style.css", auth=AUTH)
+@pytest.mark.parametrize(("path", "kind"), [("/style.css", "text/css"), ("/page.js", "text/javascript")])
+def test_stylesheet_and_script_are_served(client, path, kind):
+    response = client.get(path, auth=AUTH)
     assert response.status_code == 200
-    assert response.headers["content-type"].startswith("text/css")
+    assert response.headers["content-type"].startswith(kind)  # nosniff refuses any other type
+
+
+def test_page_has_no_inline_script(client):
+    page = client.get("/", auth=AUTH).text
+    assert page.count("<script") == page.count('<script src="/page.js" defer></script>') == 1
+
+
+def test_run_check_now_says_it_is_running(client):
+    assert 'data-busy="Checking…"' in client.get("/", auth=AUTH).text
 
 
 def test_register_text_is_escaped(monkeypatch, tmp_path):
     register = tmp_path / "writers.yaml"
-    register.write_text(
-        "- id: evil\n  owner: x\n  purpose: <script>alert(1)</script>\n"
-        "  identity: { odoo_user: e@x.test }\n  may_write: [odoo:sale.order]\n"
-    )
+    register.write_text("- id: evil\n  owner: x\n  purpose: <script>alert(1)</script>\n  identity: { odoo_user: e@x.test }\n  may_write: [odoo:sale.order]\n")
     main = start(monkeypatch, REGISTER_PATH=str(register))
     page = TestClient(main.app).get("/", auth=AUTH).text
     assert "<script>" not in page
@@ -160,11 +173,34 @@ def test_ledger_shows_writes_with_their_details(client, db_path):
 
 def test_ledger_filters_by_query_string(client, db_path):
     seen(db_path)
-    seen(db_path, system="shopify", model="product", record_ref="gid://shopify/Product/9", identity="pricing-tool",
-         payload={"title": "Rife Sneaker"})
+    seen(db_path, system="shopify", model="product", record_ref="gid://shopify/Product/9", identity="pricing-tool", payload={"title": "Rife Sneaker"})
     page = client.get("/?system=shopify", auth=AUTH).text
     assert "Product/9" in page
     assert "AL01-36" not in page
+
+
+def test_each_write_shows_its_system_and_a_click_filters_by_it(client, db_path):
+    seen(db_path, system="shopify", model="order", record_ref="gid://shopify/Order/3", identity="Online Store")
+    page = client.get("/?system=shopify", auth=AUTH).text
+    assert "<th>System</th>" in page
+    assert 'href="?system=shopify#ledger">Shopify</a>' in page
+    assert 'href="?identity=Online+Store&amp;system=shopify#ledger"' in page  # keeps the other filters
+    assert 'href="?model=order&amp;system=shopify#ledger"' in page
+
+
+def test_filter_lists_only_what_the_other_filters_leave_with_counts(client, db_path):
+    seen(db_path)
+    seen(db_path, system="shopify", model="product", record_ref="gid://shopify/Product/9", identity="pricing-tool")
+    page = client.get("/?system=shopify", auth=AUTH).text
+    assert '<option value="product">product (1)</option>' in page
+    assert '<option value="stock.quant"' not in page
+
+
+def test_a_filter_that_matches_nothing_keeps_its_choice(client, db_path):
+    seen(db_path)
+    page = client.get("/?system=shopify&model=stock.quant", auth=AUTH).text
+    assert '<option value="stock.quant" selected>stock.quant (0)</option>' in page
+    assert "No writes recorded yet for this filter" in page
 
 
 def test_odd_filter_values_are_harmless(client, db_path):
@@ -178,10 +214,9 @@ def test_odd_filter_values_are_harmless(client, db_path):
 def test_writers_show_their_activity(client, db_path):
     seen(db_path, record_ref="1", written_at="2026-10-26T09:00:00Z")
     seen(db_path, record_ref="2", written_at="2026-10-26T10:30:00Z")
-    seen(db_path, system="shopify", model="inventory_level", record_ref="3", identity="stock-sync",
-         written_at="2026-10-26T11:00:00Z")
+    seen(db_path, system="shopify", model="inventory_level", record_ref="3", identity="stock-sync", written_at="2026-10-26T11:00:00Z")
     page = client.get("/", auth=AUTH).text
-    row = page[page.index("stock-cron"):]
+    row = page[page.index("stock-cron") :]
     row = row[: row.index("</tr>")]
     assert "2026-10-26 11:00 UTC" in row
     assert ">3<" in row
@@ -190,7 +225,7 @@ def test_writers_show_their_activity(client, db_path):
 def test_identities_missing_from_the_register_come_first_in_red(client, db_path):
     seen(db_path, identity="admin")
     page = client.get("/", auth=AUTH).text
-    writers = page[page.index('id="writers"'):page.index('id="ledger"')]
+    writers = page[page.index('id="writers"') : page.index('id="ledger"')]
     assert writers.index("admin") < writers.index("shopify-odoo-sync")
     assert 'class="unregistered"' in writers
     assert "Not in the register" in writers
@@ -199,7 +234,7 @@ def test_identities_missing_from_the_register_come_first_in_red(client, db_path)
 def test_unattributed_writes_are_not_called_unregistered(client, db_path):
     seen(db_path, system="shopify", model="inventory_level", identity="unattributed")
     page = client.get("/", auth=AUTH).text
-    writers = page[page.index('id="writers"'):page.index('id="ledger"')]
+    writers = page[page.index('id="writers"') : page.index('id="ledger"')]
     assert "Not in the register" not in writers
     assert "Shopify did not say who" in writers
 
@@ -207,7 +242,7 @@ def test_unattributed_writes_are_not_called_unregistered(client, db_path):
 def test_a_writer_named_unattributed_still_shows_in_red(client, db_path):
     seen(db_path, system="shopify", model="product", identity='"unattributed"')
     page = client.get("/", auth=AUTH).text
-    writers = page[page.index('id="writers"'):page.index('id="ledger"')]
+    writers = page[page.index('id="writers"') : page.index('id="ledger"')]
     assert "Not in the register" in writers
     assert "did not say who" not in writers
 
@@ -232,8 +267,7 @@ ADMIN_CRON = """
 """
 
 
-@pytest.mark.parametrize("headers", [{"Sec-Fetch-Site": "cross-site"}, {"Sec-Fetch-Site": "same-site"},
-                                     {"Origin": "https://evil.example"}, {"Origin": "null"}])
+@pytest.mark.parametrize("headers", [{"Sec-Fetch-Site": "cross-site"}, {"Sec-Fetch-Site": "same-site"}, {"Origin": "https://evil.example"}, {"Origin": "null"}])
 def test_run_check_now_refuses_posts_from_other_sites(client, headers):
     assert client.post("/check", auth=AUTH, headers=headers, follow_redirects=False).status_code == 403
 
@@ -256,18 +290,17 @@ def test_a_check_turns_an_unknown_writer_into_a_card(client, db_path):
     seen(db_path, identity="admin")
     client.post("/check", auth=AUTH, headers=SAME_ORIGIN)
     page = client.get("/", auth=AUTH).text
-    findings = page[page.index('id="findings"'):page.index('id="writers"')]
+    findings = page[page.index('id="findings"') : page.index('id="writers"')]
     assert 'class="finding red"' in findings
     assert "admin changed odoo:stock.quant once" in findings
     assert "Last check: never" not in page
 
 
 def test_unattributed_writes_are_a_note_not_a_card(client, db_path):
-    seen(db_path, system="shopify", model="inventory_level", identity="unattributed",
-         payload={"sku": "AL01-36", "location": "Milan", "available": 4})
+    seen(db_path, system="shopify", model="inventory_level", identity="unattributed", payload={"sku": "AL01-36", "location": "Milan", "available": 4})
     client.post("/check", auth=AUTH, headers=SAME_ORIGIN)
     page = client.get("/", auth=AUTH).text
-    findings = page[page.index('id="findings"'):page.index('id="writers"')]
+    findings = page[page.index('id="findings"') : page.index('id="writers"')]
     assert 'class="finding' not in findings
     assert 'class="note"' in findings and "without saying who" in findings
 
@@ -301,9 +334,10 @@ def test_a_broken_register_edit_pauses_checks_and_keeps_the_findings(monkeypatch
 
 # --- triage on the page ------------------------------------------------------------------
 
+
 def findings_section(client):
     page = client.get("/", auth=AUTH).text
-    return page, page[page.index('id="findings"'):page.index('id="writers"')]
+    return page, page[page.index('id="findings"') : page.index('id="writers"')]
 
 
 def test_without_a_key_triage_is_off_and_cards_keep_the_rule_severity(client, db_path, main):
@@ -334,8 +368,7 @@ def test_each_input_is_triaged_once(db_path, main):
 
 
 def test_unattributed_writes_are_never_triaged(db_path, main):
-    seen(db_path, system="shopify", model="inventory_level", identity="unattributed",
-         payload={"sku": "AL01-36", "location": "Milan", "available": 4})
+    seen(db_path, system="shopify", model="inventory_level", identity="unattributed", payload={"sku": "AL01-36", "location": "Milan", "available": 4})
     main.run_check()
     main.CLAUDE = Claude()
     main.run_triage()
@@ -357,8 +390,7 @@ def test_when_claude_is_unreachable_the_run_stops_and_tries_again_later(db_path,
 def test_a_hidden_login_is_put_back_only_on_the_page(client, db_path, main):
     seen(db_path, identity="marta.puig@alohas.com", model="sale.order", payload={"name": "S1"})
     main.run_check()
-    main.CLAUDE = Claude(RATED | {"category": "unregistered_writer"},
-                         EXPLAINED | {"suggested_fix": "identity: { odoo_user: [login] }"})
+    main.CLAUDE = Claude(RATED | {"category": "unregistered_writer"}, EXPLAINED | {"suggested_fix": "identity: { odoo_user: [login] }"})
     main.run_triage()
     _, findings = findings_section(client)
     assert "odoo_user: marta.puig@alohas.com" in findings

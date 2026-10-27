@@ -26,10 +26,11 @@ jobs:
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           version: "0.13.0"
-      - run: make lint
+      - name: Ruff lint and format check (to fix, run make fmt)
+        run: make lint
       - run: make test
       - name: App code size
-        run: echo "App code in app/ is $(make -s loc) lines (budget about 500-600)." >> "$GITHUB_STEP_SUMMARY"
+        run: echo "App code in app/ is $(make -s loc) lines (budget about 700)." >> "$GITHUB_STEP_SUMMARY"
       - name: The live compose file is valid
         run: docker compose -f docker-compose.yml config --quiet
         env:  # placeholders: the live file refuses to start without them

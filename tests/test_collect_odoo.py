@@ -40,13 +40,18 @@ class FakeOdoo:
         if body.get("order") == "write_date desc":
             rows = sorted(rows, key=lambda r: r["write_date"], reverse=True)
         offset = body.get("offset", 0)
-        return httpx.Response(200, json=rows[offset: offset + body["limit"]] if "limit" in body else rows)
+        return httpx.Response(200, json=rows[offset : offset + body["limit"]] if "limit" in body else rows)
 
 
 def quant(id=7, uid=6, written="2026-10-26 10:00:00", created="2026-10-20 09:00:00", qty=4.0):
     return {
-        "id": id, "write_uid": [uid, "Someone"], "write_date": written, "create_date": created,
-        "product_id": [11, "[AL01-36] Rife Sneaker (36)"], "location_id": [3, "WH/Milan"], "quantity": qty,
+        "id": id,
+        "write_uid": [uid, "Someone"],
+        "write_date": written,
+        "create_date": created,
+        "product_id": [11, "[AL01-36] Rife Sneaker (36)"],
+        "location_id": [3, "WH/Milan"],
+        "quantity": qty,
     }
 
 
@@ -63,8 +68,11 @@ def test_quant_record_becomes_a_write():
     resolve = {"write_uid": "stock@alohas.test", "product_id": "AL01-36", "location_id": "Milan"}
     write = collect_odoo.to_write("stock.quant", quant(), lambda field, value: resolve[field])
     assert write == {
-        "system": "odoo", "model": "stock.quant", "record_ref": "7",
-        "identity": "stock@alohas.test", "action": "write",
+        "system": "odoo",
+        "model": "stock.quant",
+        "record_ref": "7",
+        "identity": "stock@alohas.test",
+        "action": "write",
         "written_at": "2026-10-26T10:00:00Z",
         "payload": {"sku": "AL01-36", "location": "Milan", "quantity": 4.0},
     }
@@ -76,9 +84,17 @@ def test_same_create_and_write_date_means_create():
 
 
 def test_only_allowlisted_fields_reach_the_ledger():
-    order = {"id": 1, "write_uid": [6, "x"], "write_date": "2026-10-26 10:00:00",
-             "create_date": "2026-10-26 10:00:00", "name": "S00001", "state": "draft",
-             "amount_total": 120.0, "partner_id": [9, "Laura Pérez"], "partner_shipping_id": [9, "x"]}
+    order = {
+        "id": 1,
+        "write_uid": [6, "x"],
+        "write_date": "2026-10-26 10:00:00",
+        "create_date": "2026-10-26 10:00:00",
+        "name": "S00001",
+        "state": "draft",
+        "amount_total": 120.0,
+        "partner_id": [9, "Laura Pérez"],
+        "partner_shipping_id": [9, "x"],
+    }
     payload = collect_odoo.to_write("sale.order", order, lambda f, v: "sync@alohas.test")["payload"]
     assert payload == {"name": "S00001", "state": "draft", "amount_total": 120.0}
 
@@ -164,8 +180,7 @@ def test_refuses_to_poll_with_a_key_that_can_write(db, caplog):
 
 def test_odoo_being_down_does_not_crash_the_collector(db, tmp_path, monkeypatch, caplog):
     keys = tmp_path / "keys.json"
-    keys.write_text(json.dumps({"ledger": {"login": "ledger@alohas.test", "key": "super-secret-key-123"},
-                                "since": START}))
+    keys.write_text(json.dumps({"ledger": {"login": "ledger@alohas.test", "key": "super-secret-key-123"}, "since": START}))
     monkeypatch.setattr(collect_odoo, "KEYS_FILE", str(keys))
 
     def down(request):
