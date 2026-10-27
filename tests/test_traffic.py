@@ -2,6 +2,8 @@ import pytest
 
 from sim import traffic
 
+CONTEXT = {"inventory_mode": True}
+
 
 class Odoo:
     """Answers the JSON-2 calls the traffic makes, and keeps them."""
@@ -14,17 +16,27 @@ class Odoo:
         return {"search_read": self.quants, "create": [99]}.get(method, True)
 
 
-@pytest.mark.parametrize(("quants", "counted"), [([{"id": 7, "quantity": 4.0}], 3), ([], 0)],
-                         ids=["there", "deleted at zero"])
-def test_a_stock_count_goes_through_odoos_inventory_mode(monkeypatch, quants, counted):
-    # Odoo's scheduler deletes empty quants, so a second `make traffic` found none and crashed.
+@pytest.fixture(autouse=True)
+def one_step_down(monkeypatch):
     monkeypatch.setattr(traffic.rng, "choice", lambda steps: -1)
-    odoo = Odoo(quants)
-    quantity = traffic.adjust_stock(odoo, {"AL10-39": 5}, {"Milan": 14}, "AL10-39", "Milan")
-    context = {"inventory_mode": True}
+
+
+def test_a_stock_count_writes_the_quant_that_is_there():
+    # Not Odoo's create upsert: it skips a count of 0, and the smoke test then found drift that wasn't there.
+    odoo = Odoo(quants=[{"id": 7, "quantity": 1.0}])
+    assert traffic.adjust_stock(odoo, {"AL09-38": 5}, {"Barcelona": 14}, "AL09-38", "Barcelona") == 0
     assert odoo.calls[1:] == [
-        ("stock.quant", "create", {"vals_list": [{"product_id": 5, "location_id": 14, "inventory_quantity": quantity}],
-                                   "context": context}),
-        ("stock.quant", "action_apply_inventory", {"ids": [99], "context": context}),
+        ("stock.quant", "write", {"ids": [7], "vals": {"inventory_quantity": 0}, "context": CONTEXT}),
+        ("stock.quant", "action_apply_inventory", {"ids": [7], "context": CONTEXT}),
     ]
-    assert quantity == counted  # one step from what Odoo has, never below zero
+
+
+def test_a_stock_count_brings_back_a_quant_odoo_deleted_at_zero():
+    # Odoo's scheduler deletes empty quants, so a second `make traffic` found none and crashed.
+    odoo = Odoo(quants=[])
+    assert traffic.adjust_stock(odoo, {"AL10-39": 5}, {"Milan": 14}, "AL10-39", "Milan") == 0
+    assert odoo.calls[1:] == [
+        ("stock.quant", "create", {"vals_list": [{"product_id": 5, "location_id": 14, "inventory_quantity": 0}],
+                                   "context": CONTEXT}),
+        ("stock.quant", "action_apply_inventory", {"ids": [99], "context": CONTEXT}),
+    ]
