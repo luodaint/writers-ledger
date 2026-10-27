@@ -123,14 +123,15 @@ def poll_all(http, conn, cache: dict) -> int:
 
 def poll_once(conn, cache: dict, **kwargs) -> int:
     try:
-        key = json.loads(open(KEYS_FILE).read())["ledger"]["key"]
+        with open(KEYS_FILE) as f:
+            key = json.load(f)["ledger"]["key"]
     except (OSError, ValueError, KeyError):
         log.info("No Odoo key for the collector yet: run `make seed`.")
         return 0
     try:
         with client(URL, DB, key, **kwargs) as http:
             return poll_all(http, conn, cache)
-    except Exception as e:  # the ledger page must keep working while Odoo is down
+    except Exception as e:  # noqa: BLE001 - the ledger page must keep working while Odoo is down
         log.warning("Odoo poll failed: %s: %s", type(e).__name__, e)
         return 0
 

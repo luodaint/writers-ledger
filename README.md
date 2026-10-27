@@ -1,5 +1,7 @@
 # Writers Ledger
 
+[![CI](https://github.com/luodaint/writers-ledger/actions/workflows/ci.yml/badge.svg)](https://github.com/luodaint/writers-ledger/actions/workflows/ci.yml)
+
 Every write into Odoo and Shopify lands in a ledger, gets matched against
 `writers.yaml`, and anything unknown, out of scope or ownerless becomes a finding,
 explained in plain words.
@@ -100,9 +102,15 @@ folder where Dokploy checked out the repo:
 
 ```sh
 make test    # Python 3.12 venv via uv, then pytest
+make lint    # ruff
+make smoke   # after `make up seed traffic`: every writer is in the ledger, no customer data
 make loc     # app code line count
 make help    # all targets
 ```
+
+`main` only changes through pull requests. CI runs lint and tests, then the whole
+offline demo end to end (`make up seed traffic smoke`); both checks and CodeQL must
+pass before a merge. Report vulnerabilities privately: see [SECURITY.md](SECURITY.md).
 
 Spec: [`docs/brief.md`](docs/brief.md). Rules for coding agents:
 [`AGENTS.md`](AGENTS.md). How the AI assistant was used:

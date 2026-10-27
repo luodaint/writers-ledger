@@ -6,3 +6,13 @@ requires-python = ">=3.12,<3.13"
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+extend-exclude = [".agents"]  # the shared toolkit, a submodule with its own checks
+
+[tool.ruff.lint.per-file-ignores]
+"sim/seed_odoo.py" = ["F821"]  # runs inside `odoo shell`, which provides `env`
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["fastapi.Depends", "fastapi.security.HTTPBasic"]

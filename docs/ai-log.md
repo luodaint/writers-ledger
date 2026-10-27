@@ -31,3 +31,10 @@ where it got it wrong, what I changed by hand.
 - **Third automated security pass:** order updates were blamed on the app that created the order, and a later event by another app could take the blame for a change. Updates are now attributed through the record's events in a 30-second-before to 5-second-after window, and two authors in that window mean `unattributed`.
 - **Open for Phase 2:** customers buying on the Online Store show as a writer missing from the register.
 - **Changed by hand:** nothing yet.
+
+## Between phases: GitHub and CI
+
+- **Asked:** a public repo `luodaint/writers-ledger`, CI/CD ("tests, cleanup, etc."), changes only through PRs, issues and wiki on.
+- **Done:** CI runs `make lint test`, then the offline demo end to end (`make up seed traffic smoke`). `main` has a ruleset with no bypass: PR, both checks and CodeQL required, squash merge only. Secret scanning with push protection, Dependabot for the action pins, private vulnerability reporting. Ruff added as a dev dependency for "cleanup".
+- **Got wrong:** the first `sim/smoke.py` compared `sqlite3.Row` objects to tuples, so it could never pass; caught by testing it against a hand-built ledger before CI ran it. `make traffic` needed `-T` to run without a terminal.
+- **Changed by hand:** nothing.

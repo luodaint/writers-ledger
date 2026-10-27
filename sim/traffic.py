@@ -24,7 +24,8 @@ class Odoo:
     """JSON-2 calls signed with one writer's API key."""
 
     def __init__(self, role: str):
-        key = json.load(open(KEYS_FILE))[role]["key"]
+        with open(KEYS_FILE) as f:
+            key = json.load(f)[role]["key"]
         self.http = httpx.Client(
             base_url=os.environ["ODOO_URL"], timeout=30,
             headers={"Authorization": f"bearer {key}", "X-Odoo-Database": os.environ.get("ODOO_DB", "writers")},

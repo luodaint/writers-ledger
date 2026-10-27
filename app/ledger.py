@@ -1,7 +1,7 @@
 """The ledger: every write we observed, in SQLite. Queries use parameters only."""
 import json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS writes (
@@ -35,12 +35,12 @@ def utc(value: str) -> str:
     """Any ISO-ish timestamp (naive means UTC, as Odoo sends) as 2026-10-26T10:00:00Z."""
     moment = datetime.fromisoformat(value)
     if moment.tzinfo is None:
-        moment = moment.replace(tzinfo=timezone.utc)
-    return moment.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        moment = moment.replace(tzinfo=UTC)
+    return moment.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def now() -> str:
-    return utc(datetime.now(timezone.utc).isoformat())
+    return utc(datetime.now(UTC).isoformat())
 
 
 def connect(path) -> sqlite3.Connection:
