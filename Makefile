@@ -38,7 +38,7 @@ seed: ## Create Odoo users with their API keys, products, locations and stock
 	$(COMPOSE) run --rm -T seed < sim/seed_odoo.py
 
 traffic: ## Play simulated days of writes from every writer, plus the four planted incidents
-	$(COMPOSE) run --rm -T traffic
+	$(COMPOSE) run --rm --build -T traffic  # --build: `make up` rebuilds only the app, and sim/ changes too
 
 check: ## Run a check now: the rules over the ledger and writers.yaml
 	$(COMPOSE) exec -T app python -c 'from app.main import run_check; run_check()'
