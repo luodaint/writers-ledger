@@ -1,4 +1,5 @@
 import importlib
+from datetime import timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -63,7 +64,11 @@ def seen(db_path, **over):
         "record_ref": "7",
         "identity": "stock@alohas.test",
         "action": "write",
-        "written_at": "2026-10-26T10:00:00Z",
+        # Relative to now on purpose: run_check only counts writes inside its
+        # seven-day WINDOW (and drift only settles writes older than the settle
+        # gap), so a fixed timestamp ages out of the checks and the card it
+        # should produce silently disappears.
+        "written_at": ledger.now(timedelta(days=1)),
         "payload": {"sku": "AL01-36", "location": "Milan", "quantity": 4},
     } | over
     ledger.record_write(ledger.connect(db_path), write)
